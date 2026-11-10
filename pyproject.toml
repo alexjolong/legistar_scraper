@@ -1,0 +1,20 @@
+[project]
+name = "legistar-scraper"
+version = "0.1.0"
+description = "Ingest Hennepin County legislative records from the Legistar Web API for a RAG question answering system"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+legistar = "legistar_scraper.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
