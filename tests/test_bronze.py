@@ -8,8 +8,8 @@ from datetime import date, timedelta
 import httpx
 import pytest
 
-from legistar_scraper import bronze
-from legistar_scraper.client import LegistarClient
+from legistutor import bronze
+from legistutor.client import LegistarClient
 
 OLD = "2023-06-01T00:00:00"
 

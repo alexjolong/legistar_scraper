@@ -14,6 +14,11 @@ tables join back on ``id`` for attributes. Vertex ids are strings such as
 ``hennepinmn:matter:4798`` so that several tenants can share one graph; Minnesota
 Statutes are tenant-independent (``mnstat:275.065``).
 
+Law that a matter cites (a statute, a subdivision, a session law, a county ordinance)
+gets a stub vertex here: its id and number, nothing more. The sources that own those
+things (``silver/mnlaw``, ``silver/ordinances``) write the same ids with the text
+and history, and the query layer shows their row in place of the stub.
+
 The build is a full rebuild from bronze every time. At this size it takes seconds.
 """
 
@@ -29,6 +34,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from . import revisor
 from . import text as tx
 from .bronze import BronzeStore
 
@@ -38,7 +44,6 @@ log = logging.getLogger(__name__)
 REFERRAL_ACTIONS = frozenset(
     {"refer to committee", "refer as recommended", "return to committee", "send to board", "progress"}
 )
-STATUTE_URL = "https://www.revisor.mn.gov/statutes/cite/{number}"
 
 _TYPES = {"s": pa.string(), "i": pa.int64(), "b": pa.bool_(), "d": pa.date32()}
 
@@ -61,6 +66,9 @@ VERTEX_SCHEMAS = {
         "agenda_date:d passed_date:d department:s administrator_recommendation:s last_modified_utc:s site_url:s"
     ),
     "statute": _schema("id:s number:s kind:s chapter:s url:s"),
+    "subdivision": _schema("id:s section:s subdivision:s chapter:s url:s"),
+    "session_law": _schema("id:s year:i special:i chapter:s url:s"),
+    "ordinance": _schema("id:s number:s"),
 }
 
 EDGE_SCHEMAS = {
@@ -82,8 +90,14 @@ EDGE_SCHEMAS = {
     "references": _schema("src:s dst:s file_number:s"),
     # Matter -> Department
     "requested_by": _schema("src:s dst:s"),
-    # Matter -> Statute
+    # Matter -> Statute (chapter or section)
     "cites": _schema("src:s dst:s citation:s"),
+    # Matter -> Subdivision, where the citation is that precise
+    "cites_subdivision": _schema("src:s dst:s citation:s"),
+    # Matter -> Session law ("Laws of Minnesota 2023, chapter 64, article 8, section 3")
+    "cites_law": _schema("src:s dst:s citation:s"),
+    # Matter -> County ordinance, by number
+    "cites_ordinance": _schema("src:s dst:s citation:s"),
     # Statute section -> Statute chapter
     "part_of": _schema("src:s dst:s"),
     # Person -> Matter
@@ -209,6 +223,9 @@ class _Builder:
         file_of = {m["MatterId"]: tx.normalize_file_number(m["MatterFile"]) for m in matters}
         departments: dict[str, str] = {}
         statutes: set[str] = set()
+        subdivisions: set[tuple[str, str]] = set()
+        session_laws: set[tuple[int, int, str]] = set()
+        ordinances: set[str] = set()
 
         for matter in matters:
             matter_vid = self.vid("matter", matter["MatterId"])
@@ -269,6 +286,21 @@ class _Builder:
             for number, citation in tx.extract_statute_citations(body_text):
                 statutes.add(number)
                 self.edges["cites"].append({"src": matter_vid, "dst": f"mnstat:{number}", "citation": citation})
+            for section, subdivision, citation in tx.extract_subdivision_citations(body_text):
+                subdivisions.add((section, subdivision))
+                self.edges["cites_subdivision"].append(
+                    {"src": matter_vid, "dst": revisor.statute_id(section, subdivision), "citation": citation}
+                )
+            for year, special, chapter, citation in tx.extract_session_law_citations(body_text):
+                session_laws.add((year, special, chapter))
+                self.edges["cites_law"].append(
+                    {"src": matter_vid, "dst": revisor.session_law_id(year, chapter, special), "citation": citation}
+                )
+            for number, citation in tx.extract_ordinance_citations(body_text):
+                ordinances.add(number)
+                self.edges["cites_ordinance"].append(
+                    {"src": matter_vid, "dst": self.vid("ordinance", number), "citation": citation}
+                )
 
             own = tx.normalize_file_number(file_number)
             for mentioned in tx.extract_file_numbers(body_text):
@@ -304,11 +336,35 @@ class _Builder:
                     "number": number,
                     "kind": "section" if is_section else "chapter",
                     "chapter": chapter,
-                    "url": STATUTE_URL.format(number=number),
+                    "url": revisor.statute_url(number),
                 }
             )
             if is_section:
                 self.edges["part_of"].append({"src": f"mnstat:{number}", "dst": f"mnstat:{chapter}"})
+        for section, subdivision in sorted(subdivisions):
+            self.vertices["subdivision"].append(
+                {
+                    "id": revisor.statute_id(section, subdivision),
+                    "section": section,
+                    "subdivision": subdivision,
+                    "chapter": tx.statute_chapter(section),
+                    "url": revisor.statute_url(section, subdivision),
+                }
+            )
+            self.edges["part_of"].append({"src": revisor.statute_id(section, subdivision), "dst": f"mnstat:{section}"})
+        for year, special, chapter in sorted(session_laws):
+            self.vertices["session_law"].append(
+                {
+                    "id": revisor.session_law_id(year, chapter, special),
+                    "year": year,
+                    "special": special,
+                    "chapter": chapter,
+                    "url": revisor.session_law_url(year, chapter, special),
+                }
+            )
+        self.vertices["ordinance"] = [
+            {"id": self.vid("ordinance", number), "number": number} for number in sorted(ordinances, key=int)
+        ]
 
     def _meetings_and_agendas(self, events: list[dict[str, Any]], status_after: dict[int, str | None]) -> None:
         for event in events:
@@ -501,8 +557,10 @@ def _label(kind: str, row: dict[str, Any]) -> str:
         return f"{row['body_name']} {row['date']}"
     if kind == "matter":
         return f"{row['file_number'] or row['matter_id']}: {row['title'] or ''}".strip()
-    if kind == "statute":
-        return f"Minn. Stat. {'§ ' if row['kind'] == 'section' else 'ch. '}{row['number']}"
+    if kind in ("statute", "subdivision", "session_law"):
+        return revisor.label(kind, row)
+    if kind == "ordinance":
+        return f"Ordinance {row['number']}"
     return row["name"]
 
 

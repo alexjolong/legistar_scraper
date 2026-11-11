@@ -11,10 +11,10 @@ import pyarrow.parquet as pq
 import pytest
 from test_silver import BOARD, PUBLIC_WORKS, _event, _item, _matter
 
-from legistar_scraper import gold, rag, silver
-from legistar_scraper.bronze import BronzeStore
-from legistar_scraper.embed import normalize
-from legistar_scraper.search import Filters, Searcher
+from legistutor import gold, rag, silver
+from legistutor.bronze import BronzeStore
+from legistutor.embed import normalize
+from legistutor.search import Filters, Searcher
 
 C = "test"
 TEMPLATE = "Item Description:\n..title\nT\n..end\n\nResolution:\n..body\n{}\n..end\n\nBackground:\n{}"

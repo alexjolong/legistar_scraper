@@ -138,6 +138,69 @@ def extract_statute_citations(text: str | None) -> list[tuple[str, str]]:
     return list(found.items())
 
 
+_SUBDIVISION = re.compile(
+    r"(?P<section>(?<![\d.])\d{1,3}[A-Z]?\.\d+)\s*,?\s*(?P<unit>(?i:subdivisions?|subds?\.?))\s*"
+    r"(?P<first>\d+[a-z]?)(?![\dA-Za-z])(?P<rest>(?:\s*(?:,|,?\s*(?i:and)|&)\s*\d+[a-z]?(?![\dA-Za-z]))*)"
+)
+
+
+def extract_subdivision_citations(text: str | None) -> list[tuple[str, str, str]]:
+    """``(section, subdivision, citation_text)`` for each subdivision cited, e.g.
+    ``("383B.158", "4", "383B.158, subdivision 4")``. Only sections that
+    :func:`extract_statute_citations` also finds are kept, so a decimal number that
+    merely looks like a section is not mistaken for one."""
+    sections = {number for number, _ in extract_statute_citations(text)}
+    found: dict[tuple[str, str], str] = {}
+    for match in _SUBDIVISION.finditer(text or ""):
+        section = match.group("section")
+        if section not in sections:
+            continue
+        numbers = [match.group("first")]
+        if match.group("unit").lower().rstrip(".").endswith("s"):  # "subdivisions 1, 2 and 3"
+            numbers += re.findall(r"\d+[a-z]?", match.group("rest"))
+        for number in numbers:
+            found.setdefault((section, number), re.sub(r"\s+", " ", match.group(0)))
+    return [(section, number, citation) for (section, number), citation in found.items()]
+
+
+# "Laws of Minnesota 2023, Chapter 64, Article 8, Section 3", "Minnesota Session Laws 2024,
+# Regular Session, Chapter 127", "Laws of Minnesota 2025, 1st Special Session, Chapter 13"
+_SPECIAL_SESSIONS = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3}
+_SESSION_LAW = re.compile(
+    r"(?i)\b(?:session\s+)?laws\s+(?:of\s+minnesota,?\s*)?(?:for\s+|of\s+)?(?P<year>(?:19|20)\d{2}),?\s*"
+    r"(?:(?:regular|(?P<special>first|1st|second|2nd|third|3rd)\s+special)\s+session,?\s*)?"
+    r"chapter\s+(?P<chapter>\d+)"
+    r"(?:\s*\([^)]{0,20}\))?(?:,?\s*chapter\s+\d+)?"
+    r"(?:,?\s*art(?:icle|\.)\s*\d+)?(?:,?\s*(?:sections?|sec\.?)\s*\d+(?:\s*(?:-|and|,)\s*\d+)*)?"
+)
+
+
+def extract_session_law_citations(text: str | None) -> list[tuple[int, int, str, str]]:
+    """``(year, special_session, chapter, citation_text)`` for each session law cited;
+    ``special_session`` is 0 for a regular session."""
+    found: dict[tuple[int, int, str], str] = {}
+    for match in _SESSION_LAW.finditer(text or ""):
+        special = _SPECIAL_SESSIONS.get((match.group("special") or "").lower(), 0)
+        key = (int(match.group("year")), special, match.group("chapter"))
+        citation = re.sub(r"\s+", " ", match.group(0)).strip(" ,")
+        if len(citation) > len(found.get(key, "")):  # keep the fullest wording: article and section
+            found[key] = citation
+    return [(year, special, chapter, citation) for (year, special, chapter), citation in found.items()]
+
+
+# "Ordinance 13", "Ordinance No. 26", "Recycling Ordinance Number 13". County ordinances
+# are numbered 1 to 99; a year ("Ordinance 2023-14") belongs to some other body.
+_ORDINANCE = re.compile(r"(?i)\bordinance\s+(?:no\.?\s*|number\s+|#\s*)?(?P<number>\d{1,2})(?![\d-])")
+
+
+def extract_ordinance_citations(text: str | None) -> list[tuple[str, str]]:
+    """``(number, citation_text)`` for each county ordinance cited by number."""
+    found: dict[str, str] = {}
+    for match in _ORDINANCE.finditer(text or ""):
+        found.setdefault(match.group("number"), re.sub(r"\s+", " ", match.group(0)))
+    return list(found.items())
+
+
 # --- references to other matters by file number -------------------------------------
 # 26-0333, 26-0333 R1, 25-0312 R1 S1, 23N-0018, 24-HCRRA-0003, 23-HHS-0041R1
 _FILE_NUMBER = re.compile(r"(?<![\w-])\d{2}N?-(?:(?:HCHRA|HCRRA|HHS)-)?\d{4}(?:\s?[RS]\d)*(?![\w-])")

@@ -3,7 +3,7 @@
 Optional: needs the ``spark`` extra (``uv sync --extra spark``) and a JDK that
 Spark supports (17 or 21). The rest of the pipeline never imports this module.
 
-Interactive lookups should use :mod:`legistar_scraper.query` (DuckDB) instead:
+Interactive lookups should use :mod:`legistutor.query` (DuckDB) instead:
 starting a Spark session takes several seconds.
 """
 
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 GRAPHFRAMES_VERSION = "0.12.3"
 GRAPHFRAMES_ARTIFACTS = ("graphframes-spark4_2.13", "graphframes-graphx-spark4_2.13")
 MAVEN_BASE = "https://repo1.maven.org/maven2/io/graphframes"
-JAR_CACHE = Path.home() / ".cache" / "legistar_scraper" / "jars"
+JAR_CACHE = Path.home() / ".cache" / "legistutor" / "jars"
 
 
 def ensure_jars() -> list[Path]:
@@ -58,10 +58,10 @@ def ensure_jars() -> list[Path]:
 
 
 def find_java_home() -> str | None:
-    """A JDK Spark can run on: ``LEGISTAR_JAVA_HOME`` if set, else a JDK 17 or 21
+    """A JDK Spark can run on: ``LEGISTUTOR_JAVA_HOME`` if set, else a JDK 17 or 21
     under ``~/.jdks`` (where this project's setup puts one), else whatever
     ``JAVA_HOME`` already says."""
-    explicit = os.environ.get("LEGISTAR_JAVA_HOME")
+    explicit = os.environ.get("LEGISTUTOR_JAVA_HOME")
     if explicit:
         return explicit
     for version in ("17", "21"):
@@ -71,7 +71,7 @@ def find_java_home() -> str | None:
     return os.environ.get("JAVA_HOME")
 
 
-def spark_session(app_name: str = "legistar-graph", driver_memory: str = "2g") -> SparkSession:
+def spark_session(app_name: str = "legistutor-graph", driver_memory: str = "2g") -> SparkSession:
     """A local Spark session sized for a laptop, with GraphFrames on the classpath."""
     from pyspark.sql import SparkSession
 

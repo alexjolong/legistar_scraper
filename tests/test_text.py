@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from legistar_scraper import text as tx
+from legistutor import text as tx
 
 STANDARD = """Item Description:
 ..title

@@ -6,8 +6,8 @@ from datetime import date
 
 import pytest
 
-from legistar_scraper import query, silver
-from legistar_scraper.bronze import BronzeStore
+from legistutor import query, silver
+from legistutor.bronze import BronzeStore
 
 C = "test"
 BOARD, PUBLIC_WORKS = 1, 2

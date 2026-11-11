@@ -1,15 +1,13 @@
-"""The model hosts, exercised against fake transports: no network, no GPU, no API key."""
+"""The model host, exercised against fake transports: no network, no GPU."""
 
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
-
 import httpx
 import pytest
 
-from legistar_scraper import config, llm
-from legistar_scraper.embed import EmbeddingError, OllamaEmbedder, query_prefix
+from legistutor import config, llm
+from legistutor.embed import EmbeddingError, OllamaEmbedder, query_prefix
 
 
 def test_query_prefix_by_model_family():
@@ -77,77 +75,30 @@ def test_ollama_chat_reports_a_full_window_and_a_missing_model():
         list(missing.stream("s", "u"))
 
 
-class _FakeStream:
-    def __init__(self, texts, stop_reason="end_turn"):
-        self.text_stream = iter(texts)
-        self._final = SimpleNamespace(stop_reason=stop_reason, stop_details=SimpleNamespace(category="cyber"), usage=None)
+def test_thinking_is_only_sent_when_set_and_never_shown():
+    seen = []
 
-    def __enter__(self):
-        return self
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return _ndjson({"message": {"content": "", "thinking": "pondering"}}, {"message": {"content": "Answer."}}, {"done": True})
 
-    def __exit__(self, *exc):
-        return False
-
-    def get_final_message(self):
-        return self._final
+    transport = httpx.MockTransport(handler)
+    assert "".join(llm.OllamaChat("m", transport=transport).stream("s", "u")) == "Answer."
+    list(llm.OllamaChat("m", think=False, transport=transport).stream("s", "u"))
+    assert "think" not in seen[0] and seen[1]["think"] is False
 
 
-class _FakeMessages:
-    def __init__(self, calls, label, stop_reason):
-        self._calls, self._label, self._stop_reason = calls, label, stop_reason
-
-    def stream(self, **kwargs):
-        self._calls.append((self._label, kwargs))
-        return _FakeStream(["An ", "answer."], self._stop_reason)
-
-
-def _anthropic_chat(model, stop_reason="end_turn"):
-    chat = llm.AnthropicChat(model, effort="medium")
-    calls = []
-    chat._client = SimpleNamespace(
-        messages=_FakeMessages(calls, "stable", stop_reason),
-        beta=SimpleNamespace(messages=_FakeMessages(calls, "beta", stop_reason)),
-    )
-    return chat, calls
-
-
-def test_anthropic_request_shape(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    chat, calls = _anthropic_chat("claude-sonnet-5-5")
-    assert "".join(chat.stream("system text", "user text")) == "An answer."
-    label, request = calls[0]
-    assert label == "beta"  # Sonnet gets the server-side refusal fallback
-    assert request["fallbacks"] == "default" and request["betas"] == ["server-side-fallback-2026-07-01"]
-    assert request["system"] == "system text" and request["messages"] == [{"role": "user", "content": "user text"}]
-    assert request["output_config"] == {"effort": "medium"}
-    assert "thinking" not in request and "temperature" not in request
-
-    chat, calls = _anthropic_chat("claude-haiku-5-5")
-    list(chat.stream("s", "u"))
-    label, request = calls[0]
-    assert label == "stable" and "fallbacks" not in request and "betas" not in request
-
-
-def test_anthropic_refusal_is_an_error_not_an_empty_answer(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    chat, _ = _anthropic_chat("claude-haiku-5-5", stop_reason="refusal")
-    with pytest.raises(llm.LLMError, match="declined"):
-        list(chat.stream("s", "u"))
-
-
-def test_settings_and_dotenv(tmp_path, monkeypatch):
-    for name in ("LEGISTAR_LLM_PROVIDER", "LEGISTAR_OLLAMA_MODEL", "OLLAMA_HOST", "EXAMPLE_KEY"):
+def test_settings(monkeypatch):
+    for name in ("LEGISTUTOR_CHAT_MODEL", "LEGISTUTOR_OLLAMA_THINK", "LEGISTUTOR_OLLAMA_NUM_CTX"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("LEGISTAR_OLLAMA_MODEL", "from-shell")
-    env = tmp_path / ".env"
-    env.write_text('# comment\nEXAMPLE_KEY="quoted value"\nLEGISTAR_OLLAMA_MODEL=from-file\nOLLAMA_HOST=0.0.0.0:11434\n', encoding="utf-8")
-    config.load_dotenv(env)
+    monkeypatch.setenv("OLLAMA_HOST", "0.0.0.0:11434")
     settings = config.settings()
-    assert settings.llm_provider == "anthropic" and settings.anthropic_model == "claude-sonnet-5-5"
-    assert settings.ollama_model == "from-shell"  # the shell wins over .env
-    assert settings.ollama_host == "http://127.0.0.1:11434"
-    import os
-
-    assert os.environ["EXAMPLE_KEY"] == "quoted value"
-    with pytest.raises(llm.LLMError, match="Unknown LLM provider"):
-        llm.provider(settings, "other")
+    assert settings.chat_model == config.DEFAULT_CHAT_MODEL and settings.ollama_think is False
+    assert settings.ollama_host == "http://127.0.0.1:11434" and settings.ollama_num_ctx == 16384
+    monkeypatch.setenv("LEGISTUTOR_CHAT_MODEL", "other:7b")
+    monkeypatch.setenv("LEGISTUTOR_OLLAMA_THINK", "true")
+    chat = llm.chat_model(config.settings())
+    assert (chat.model, chat.think) == ("other:7b", True)
+    monkeypatch.setenv("LEGISTUTOR_OLLAMA_THINK", "")
+    assert config.settings().ollama_think is None  # leave it to the model
+    assert llm.chat_model(config.settings(), "named:1b").model == "named:1b"

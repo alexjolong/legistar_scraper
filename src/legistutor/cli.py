@@ -1,4 +1,4 @@
-"""Command line entry point: ``uv run legistar <command>``."""
+"""Command line entry point: ``uv run legistutor <command>``."""
 
 from __future__ import annotations
 
@@ -14,8 +14,11 @@ from . import bronze
 from .client import LegistarClient
 
 
+LAW_PARTS = ("statutes", "changes", "bills", "ordinances")
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="legistar", description="Ingest Legistar legislative data.")
+    parser = argparse.ArgumentParser(prog="legistutor", description="Collect, search and question a local government legislative record.")
     parser.add_argument("--client", default="hennepinmn", help="Legistar tenant name (default: hennepinmn)")
     parser.add_argument("--data-dir", type=Path, default=Path("data"), help="root of the data lake (default: ./data)")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
@@ -61,8 +64,22 @@ def _build_parser() -> argparse.ArgumentParser:
     retrieval_options(sub.add_parser("search", help="find matters by meaning, keywords and file number"))
     ask = sub.add_parser("ask", help="answer a question from the record, with citations")
     retrieval_options(ask)
-    ask.add_argument("--provider", choices=["anthropic", "ollama"], help="which LLM answers (default: LEGISTAR_LLM_PROVIDER, else anthropic)")
-    ask.add_argument("--model", help="model name for that provider (default: claude-sonnet-5-5, or gemma3:12b for ollama)")
+    ask.add_argument("--model", help="Ollama chat model to answer with (default: LEGISTUTOR_CHAT_MODEL)")
+
+    law = sub.add_parser("ingest-law", help="fetch statutes, session laws, bills and county ordinances")
+    law.add_argument("--chapters", nargs="*", default=[], metavar="CHAPTER", help="statute chapters to watch besides the ones the record cites, e.g. 13 471")
+    law.add_argument("--since-year", type=int, default=2023, help="first session to read changes and bills for (default: 2023)")
+    law.add_argument("--full", action="store_true", help="fetch every watched chapter again, whatever its age")
+    law.add_argument("--skip", nargs="+", choices=LAW_PARTS, default=[], help="parts to leave out")
+
+    refresh = sub.add_parser("refresh", help="ingest what changed (record and law), then rebuild the graphs and the search index")
+    refresh.add_argument("--rps", type=float, default=5.0, help="max requests per second to Legistar (default: 5)")
+    refresh.add_argument("--workers", type=int, default=4, help="concurrent fetch threads (default: 4)")
+    refresh.add_argument("--no-law", action="store_true", help="leave statutes, session laws, bills and ordinances as they are")
+
+    serve = sub.add_parser("serve", help="run the local web page: ask, search, and explore the graph")
+    serve.add_argument("--port", type=int, default=8765, help="port to listen on (default: 8765)")
+    serve.add_argument("--no-browser", action="store_true", help="do not open the page in a browser")
     return parser
 
 
@@ -110,16 +127,24 @@ def _ask(args: argparse.Namespace) -> int:
     from . import config, llm, rag
 
     hits = _retrieve(args)
-    chat = llm.provider(config.settings(), args.provider, args.model)
+    chat = llm.chat_model(config.settings(), args.model)
     prompt = rag.build_prompt(args.question, hits, chat, client=args.client)
     logging.getLogger(__name__).debug("prompt:\n%s\n\n%s", prompt.system, prompt.user)
     failure = None
+    answer: list[str] = []
     try:
         for text in chat.stream(prompt.system, prompt.user):
+            answer.append(text)
             print(text, end="", flush=True)
     except llm.LLMError as exc:
         failure = exc
     print("\n")
+    unsupported = rag.unsupported_claims("".join(answer), prompt)
+    if unsupported:
+        print("Check against the sources; the answer contains identifiers that do not appear in them:")
+        for problem in unsupported:
+            print(f"  - {problem}")
+        print()
     if prompt.sources:
         print("Sources")
         for number, hit in enumerate(prompt.sources, start=1):
@@ -181,10 +206,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(bronze.status(store), indent=2))
         return 0
     if args.command == "build":
-        from . import silver
-
-        print(json.dumps(silver.build(args.data_dir, args.client), indent=2))
+        print(json.dumps(_build(args), indent=2))
         return 0
+    if args.command == "ingest-law":
+        return _ingest_law(args)
     if args.command == "sql":
         from . import query
 
@@ -197,25 +222,125 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         graph.demo(args.data_dir, args.client)
         return 0
-    if args.command in ("index", "search", "ask"):
+    if args.command in ("index", "search", "ask", "refresh", "serve"):
         from .embed import EmbeddingError
         from .llm import LLMError
 
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         try:
             if args.command == "index":
-                from . import config, gold
-                from .embed import OllamaEmbedder
+                print(json.dumps(_index(args, full=args.full), indent=2))
+                return 0
+            if args.command == "refresh":
+                return _refresh(args)
+            if args.command == "serve":
+                from . import web
 
-                settings = config.settings()
-                embedder = OllamaEmbedder(settings.embed_model, settings.ollama_host)
-                print(json.dumps(gold.build(args.data_dir, args.client, embedder, full=args.full), indent=2))
+                web.serve(args.data_dir, args.client, port=args.port, open_browser=not args.no_browser)
                 return 0
             return _search(args) if args.command == "search" else _ask(args)
         except (EmbeddingError, LLMError, FileNotFoundError, RuntimeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
     return 2
+
+
+def _build(args: argparse.Namespace) -> dict:
+    """Rebuild every silver graph there is bronze for."""
+    from . import law, ordinances, silver
+
+    report = {"record": silver.build(args.data_dir, args.client)}
+    if law.fetched_chapters(args.data_dir):
+        report["law"] = law.build(args.data_dir)
+    if ordinances.store(args.data_dir, args.client).keys("pages"):
+        report["ordinances"] = ordinances.build(args.data_dir, args.client)
+    return report
+
+
+def _watched_chapters(args: argparse.Namespace) -> list[str]:
+    """Chapters the record cites, chapters fetched before, and any named on the command line."""
+    from . import law, query
+
+    chapters = set(args.chapters) | set(law.fetched_chapters(args.data_dir))
+    try:
+        con = query.connect(args.data_dir, args.client)
+        chapters |= {row[0] for row in con.sql("select distinct chapter from v_statute where chapter is not null").fetchall()}
+    except FileNotFoundError:
+        print("No graph yet, so no cited chapters to add. Run `legistutor build` first.", file=sys.stderr)
+    return sorted(chapters, key=law.chapter_sort_key)
+
+
+def _ingest_law(args: argparse.Namespace) -> int:
+    from datetime import date
+
+    from . import config, law, openstates, ordinances, revisor
+    from .fetch import Fetcher
+
+    started = time.monotonic()
+    years = list(range(args.since_year, date.today().year + 1))
+    pages = revisor.store(args.data_dir)
+    failed = False
+    # Ordinances first: the statutes they cite join the chapters to watch.
+    if "ordinances" not in args.skip and args.client in ordinances.SITES:
+        with Fetcher() as http:
+            report = ordinances.ingest(args.data_dir, args.client, http, full=args.full)
+        failed |= bool(report["failed"])
+        print(f"ordinances: {report}")
+        ordinances.build(args.data_dir, args.client)
+    with revisor.fetcher() as http:
+        if "statutes" not in args.skip:
+            chapters = _watched_chapters(args)
+            report = revisor.ingest_chapters(pages, http, chapters, full=args.full)
+            failed |= bool(report["failed"])
+            print(f"statutes: {report}")
+        if "changes" not in args.skip:
+            print(f"changes: {revisor.ingest_table2(pages, http, years, refresh_from=years[-1])}")
+            print(f"session laws: {revisor.ingest_session_laws(pages, http, years, refresh_from=years[-1])}")
+            report = revisor.ingest_laws(pages, http, law.laws_to_fetch(args.data_dir))
+            failed |= bool(report["failed"])
+            print(f"session law texts: {report}")
+        requests = http.request_count
+    print(f"{requests} requests to the Revisor's site in {time.monotonic() - started:.0f}s -> {pages.root}")
+    if "bills" not in args.skip:
+        try:
+            print(f"bills: {openstates.ingest(args.data_dir, config.bills_api_key(), since_year=args.since_year)}")
+        except openstates.MissingKey as exc:
+            print(f"bills: skipped. {exc}")
+    return 1 if failed else 0
+
+
+def _index(args: argparse.Namespace, *, full: bool = False) -> dict:
+    from . import config, gold
+    from .embed import OllamaEmbedder
+
+    settings = config.settings()
+    return gold.build(args.data_dir, args.client, OllamaEmbedder(settings.embed_model, settings.ollama_host), full=full)
+
+
+def _refresh(args: argparse.Namespace) -> int:
+    """Everything a scheduled run needs: fetch what changed, rebuild what depends on it."""
+    from . import silver
+
+    args.stages, args.full, args.limit, args.recent_days = ["all"], False, None, 120
+    ingest_status = _ingest(args)  # a failed fetch leaves the older copy on disk, so the rebuild is still sound
+    if not args.no_law:
+        # The chapters to watch come from the record's citations, so its graph is built first.
+        silver.build(args.data_dir, args.client)
+        args.chapters, args.since_year, args.skip = [], 2023, []
+        try:
+            ingest_status |= _ingest_law(args)
+        except Exception as exc:  # noqa: BLE001 - the record's refresh must not depend on other sites being up
+            logging.getLogger(__name__).exception("law sources")
+            print(f"law: not refreshed ({exc}); what was fetched before is kept", file=sys.stderr)
+            ingest_status = 1
+    for name, graph in _build(args).items():
+        print(f"{name} graph: {sum(graph['vertices'].values())} vertices, {sum(graph['edges'].values())} edges")
+    index = _index(args)
+    print(f"index: {index['passages']} passages, {index['embedded']} newly embedded, {index['reused']} unchanged")
+    if "law" in index:
+        law = index["law"]
+        print(f"law index: {law['passages']} passages, {law['embedded']} newly embedded, {law['reused']} unchanged")
+    return ingest_status
 
 
 if __name__ == "__main__":

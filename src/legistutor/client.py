@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://webapi.legistar.com/v1"
 PAGE_SIZE = 1000  # server-side maximum
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
-USER_AGENT = "legistar-scraper/0.1 (civic research; httpx)"
+USER_AGENT = "legistutor/0.1 (civic research; httpx)"
 
 
 class RateLimiter:

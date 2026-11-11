@@ -1,0 +1,1032 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Legislative record</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.05);
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4;
+    --neutral-1: #898781; --neutral-2: #c3c2b7;
+    --warn-bg: #fff4d6; --warn-ink: #5c4300; --link: #1c5cab; --ins-bg: #d9f0e3; --del-ink: #a2332c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.06);
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181;
+      --neutral-1: #898781; --neutral-2: #52514e;
+      --warn-bg: #3a2f10; --warn-ink: #f3dc9a; --link: #86b6ef; --ins-bg: #173d2b; --del-ink: #f08b82;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         display: flex; height: 100vh; overflow: hidden; }
+  #app { flex: 1 1 0; min-width: 0; overflow-y: auto; }
+  a { color: var(--link); }
+  button, input, select { font: inherit; color: inherit; }
+  header { padding: 20px 24px 0; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0; font-weight: 650; }
+  h2 { font-size: 16px; margin: 0 0 8px; font-weight: 650; }
+  h3 { font-size: 13px; margin: 18px 0 6px; font-weight: 650; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
+  .sub { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+  nav { display: flex; gap: 4px; margin-top: 14px; border-bottom: 1px solid var(--grid); }
+  nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--ink-2); }
+  nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--series-1); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px 24px 80px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  form.ask { display: flex; gap: 8px; flex-wrap: wrap; }
+  form.ask input[type=text] { flex: 1 1 380px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--axis); background: var(--surface); }
+  .btn { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--axis); background: var(--surface); cursor: pointer; }
+  .btn.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; font-weight: 600; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.small { padding: 4px 10px; font-size: 13px; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; color: var(--ink-2); align-items: center; }
+  .filters label { display: flex; gap: 5px; align-items: center; }
+  .filters select, .filters input { padding: 4px 6px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface); max-width: 210px; }
+  .examples { margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+  .examples button { background: none; border: 0; color: var(--link); cursor: pointer; padding: 0 6px 0 0; text-decoration: underline; }
+  #answer p { margin: 0 0 10px; } #answer ul { margin: 0 0 10px; padding-left: 22px; }
+  .cite { border: 1px solid var(--axis); background: var(--wash); border-radius: 5px; font-size: 12px; padding: 0 4px; margin: 0 1px; cursor: pointer; vertical-align: 1px; }
+  .note { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+  .warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 10px; }
+  .warn ul { margin: 4px 0 0; padding-left: 20px; }
+  .error { color: #d03b3b; font-weight: 600; }
+  .hit { display: grid; grid-template-columns: 34px 1fr auto; gap: 4px 10px; padding: 12px 0; border-top: 1px solid var(--grid); }
+  .hit:first-of-type { border-top: 0; }
+  .hit .n { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .hit .title { font-weight: 600; }
+  .hit.flash { background: var(--wash); }
+  .meta { font-size: 13px; color: var(--ink-2); }
+  .excerpt { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+  .pill { display: inline-block; border: 1px solid var(--axis); border-radius: 999px; padding: 0 8px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+  .filelink { font-weight: 650; background: none; border: 0; padding: 0; cursor: pointer; color: var(--link); text-decoration: underline; }
+  /* Details open beside the page, not over it. Drag the divider (or focus it and use the arrow keys) to resize. */
+  #drawer { display: none; flex: 0 0 var(--drawer-w, 56vw); min-width: 0; overflow-y: auto; background: var(--page); padding: 8px 20px 60px; }
+  #divider { display: none; flex: 0 0 9px; cursor: col-resize; background: var(--grid); border-left: 1px solid var(--axis); border-right: 1px solid var(--axis); touch-action: none; }
+  #divider:hover, #divider:focus-visible, #divider.dragging { background: var(--series-1); outline: none; }
+  body.split #drawer, body.split #divider { display: block; }
+  body.dragging { user-select: none; cursor: col-resize; }
+  @media (max-width: 900px) {  /* too narrow to share: the details pane covers the page */
+    body.split #drawer { position: fixed; inset: 0; z-index: 5; }
+    body.split #divider { display: none; }
+  }
+  .drawerbar { display: flex; gap: 8px; margin-bottom: 12px; position: sticky; top: -8px; background: var(--page); padding: 8px 0; z-index: 2; }
+  .chart { overflow-x: auto; }
+  svg text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink-2); }
+  svg .strong { fill: var(--ink); font-weight: 600; }
+  svg .halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }  /* keeps a label legible where a line passes behind it */
+  svg .muted { fill: var(--muted); }
+  svg .hitarea { fill: transparent; cursor: pointer; }
+  svg [tabindex]:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--ink-2); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  details { margin-top: 8px; } summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+  .text { white-space: pre-wrap; font-size: 14px; margin: 8px 0 0; }
+  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); padding: 7px 10px; border-radius: 7px; font-size: 12.5px;
+         max-width: 340px; z-index: 20; display: none; line-height: 1.4; }
+  #tip b { display: block; font-size: 13.5px; }
+  .pill.alert { background: var(--warn-bg); color: var(--warn-ink); border-color: transparent; }
+  ins { background: var(--ins-bg); text-decoration: underline; text-decoration-thickness: 1px; }
+  del { color: var(--del-ink); text-decoration: line-through; }
+  .subd { border-top: 1px solid var(--grid); padding: 10px 0 4px; margin-top: 8px; }
+  .subd.focus { background: var(--wash); border-left: 3px solid var(--series-1); padding-left: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+  code { background: var(--wash); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <h1 id="heading">Legislative record</h1>
+  <div class="sub" id="metaLine">Loading…</div>
+  <nav role="tablist">
+    <button role="tab" id="tabAsk" aria-selected="true">Ask and search</button>
+    <button role="tab" id="tabQueues" aria-selected="false">Coming up</button>
+    <button role="tab" id="tabLaw" aria-selected="false">Law</button>
+  </nav>
+</header>
+<main>
+  <section id="viewAsk">
+    <div class="card">
+      <form class="ask" id="askForm">
+        <input type="text" id="q" placeholder="Ask about a topic, or type a file number such as 26-0333" autocomplete="off" aria-label="Question">
+        <button class="btn primary" id="askBtn" type="submit">Ask</button>
+        <button class="btn" id="searchBtn" type="button">Search only</button>
+        <button class="btn" id="topicBtn" type="button" title="Count the matters that contain every word, by quarter and department">Topic over time</button>
+      </form>
+      <div class="filters">
+        <label>Acted on since <input type="date" id="fSince"></label>
+        <label>Body <select id="fBody"><option value="">any</option></select></label>
+        <label>Department <select id="fDepartment"><option value="">any</option></select></label>
+        <label>Type <select id="fType"><option value="">any</option></select></label>
+        <label>Status <select id="fStatus"><option value="">any</option></select></label>
+        <label>Sources <select id="fTop"><option>5</option><option selected>8</option><option>12</option></select></label>
+      </div>
+      <div class="examples" id="examples">Try:</div>
+    </div>
+    <div class="card hidden" id="answerCard">
+      <h2>Answer</h2>
+      <div id="answer"></div>
+      <div id="answerFoot"></div>
+    </div>
+    <div class="card hidden" id="topicCard">
+      <h2 id="topicTitle">Topic over time</h2>
+      <div class="sub" id="topicSub"></div>
+      <div id="topicChart" style="margin-top:10px"></div>
+      <div id="topicTable"></div>
+    </div>
+    <div class="card hidden" id="hitsCard">
+      <h2 id="hitsTitle">Sources</h2>
+      <div class="sub" id="hitsNote"></div>
+      <div id="hits"></div>
+    </div>
+    <div class="card hidden" id="lawHitsCard">
+      <h2 id="lawHitsTitle">Related law</h2>
+      <div class="sub">Statute sections and county ordinances whose text matches, ranked apart from the record.</div>
+      <div id="lawHits"></div>
+    </div>
+  </section>
+  <section id="viewQueues" class="hidden">
+    <div class="card">
+      <h2>Coming up, by body</h2>
+      <div class="sub">An item is listed for a body when a draft board agenda places it under a "Referred to …" heading, or when a recorded action referred or returned it there and it has not been on an agenda since. Select a bar to jump to its list.</div>
+      <div class="chart" id="queueChart" style="margin-top:10px"></div>
+    </div>
+    <div id="queueLists"></div>
+    <div class="card">
+      <h2>Meetings without final minutes, last 60 days</h2>
+      <div id="meetings"></div>
+    </div>
+  </section>
+  <section id="viewLaw" class="hidden">
+    <div class="card hidden" id="lawMissing">
+      <h2>No law has been fetched yet</h2>
+      <div class="sub">Run <code>legistutor ingest-law</code>, then <code>legistutor build</code> and <code>legistutor index</code>, and restart this page.</div>
+    </div>
+    <div id="lawBody">
+    <div class="card">
+      <h2>What each session changed under the record</h2>
+      <div class="sub" id="lawSub"></div>
+      <div class="filters">
+        <label>Session <select id="lawYear"></select></label>
+        <label>Show <select id="lawScope">
+          <option value="cited">sections the record or an ordinance cites</option>
+          <option value="all">every section in the chapters fetched</option>
+        </select></label>
+      </div>
+      <div id="lawChart" style="margin-top:10px"></div>
+      <div id="lawChanges"></div>
+    </div>
+    <div class="card">
+      <h2 id="lawCheckTitle">Citations to check</h2>
+      <div class="sub">Items in the record that cite a statute section which is repealed, renumbered, or not in Minnesota Statutes as published. Some will be slips of the pen; some may rest on law that is gone.</div>
+      <div id="lawCheck" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <h2 id="lawOrdTitle">County ordinances</h2>
+      <div class="sub">As published on the county's website. Select one for its text, the statutes it cites, and the items that cite it.</div>
+      <div id="lawOrdinances" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <h2>State bills</h2>
+      <div class="sub" id="billSub"></div>
+      <form class="ask" id="billForm" style="margin-top:10px">
+        <input type="text" id="billQ" placeholder="Words in the bill's title or subject" autocomplete="off" aria-label="Words in the bill's title or subject">
+        <button class="btn" type="submit">Find bills</button>
+      </form>
+      <div class="filters">
+        <label>Session <select id="billSession"><option value="">any</option></select></label>
+        <label><input type="checkbox" id="billEnacted"> became law</label>
+      </div>
+      <div id="billTable" style="margin-top:8px"></div>
+    </div>
+    </div>
+  </section>
+</main>
+</div>
+<div id="divider" role="separator" aria-orientation="vertical" aria-label="Resize the details pane" tabindex="0"></div>
+<aside id="drawer" aria-label="Details">
+  <div class="drawerbar">
+    <button class="btn small" id="drawerBack">← Back</button>
+    <button class="btn small" id="drawerClose">Close</button>
+  </div>
+  <div id="drawerBody"></div>
+</aside>
+<div id="tip" role="tooltip"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+const SERIES = ["var(--series-1)", "var(--series-2)", "var(--series-3)"];
+const TYPE_COLOR = { matter: SERIES[0], body: SERIES[1], department: SERIES[1], statute: SERIES[2], subdivision: SERIES[2],
+                     session_law: SERIES[2], ordinance: SERIES[2], bill: SERIES[2] };
+
+// Everything from the API is data, not markup: build DOM nodes, never HTML strings.
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value == null || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  for (const child of children.flat(Infinity)) if (child != null && child !== false) node.append(child);
+  return node;
+}
+function svg(tag, attrs, ...children) {
+  const node = document.createElementNS(SVG, tag);
+  for (const [key, value] of Object.entries(attrs || {})) if (value != null) node.setAttribute(key, value);
+  for (const child of children.flat(Infinity)) if (child != null && child !== false) node.append(child);
+  return node;
+}
+async function api(path, params) {
+  const query = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v != null && v !== ""));
+  const response = await fetch(`${path}?${query}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || response.statusText);
+  return data;
+}
+const clip = (text, n) => { text = (text || "").replace(/\s+/g, " ").trim(); return text.length > n ? text.slice(0, n - 1).trimEnd() + "…" : text; };
+const fmtDate = (iso) => iso ? new Date(iso + "T00:00:00").toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+
+// --- tooltip: the same content on hover and on keyboard focus ---------------------
+const tip = $("tip");
+function showTip(target, title, lines, event) {
+  tip.replaceChildren(el("b", {}, title), ...lines.filter(Boolean).map((line) => el("div", {}, line)));
+  tip.style.display = "block";
+  const box = target.getBoundingClientRect();
+  const x = event && event.clientX ? event.clientX + 14 : box.right + 8;
+  const y = event && event.clientY ? event.clientY + 14 : box.top;
+  tip.style.left = Math.min(x, innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = Math.min(y, innerHeight - tip.offsetHeight - 8) + "px";
+}
+function withTip(node, title, lines) {
+  node.addEventListener("pointermove", (event) => showTip(node, title, lines, event));
+  node.addEventListener("pointerleave", () => (tip.style.display = "none"));
+  node.addEventListener("focus", () => showTip(node, title, lines));
+  node.addEventListener("blur", () => (tip.style.display = "none"));
+  return node;
+}
+function clickable(node, action) {
+  node.setAttribute("tabindex", "0");
+  node.setAttribute("role", "button");
+  node.style.cursor = "pointer";
+  node.addEventListener("click", action);
+  node.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); action(); } });
+  return node;
+}
+
+// --- tabs ------------------------------------------------------------------------
+const TABS = { ask: ["viewAsk", "tabAsk"], queues: ["viewQueues", "tabQueues"], law: ["viewLaw", "tabLaw"] };
+function showTab(name) {
+  for (const [tab, [view, button]] of Object.entries(TABS)) {
+    $(view).classList.toggle("hidden", tab !== name);
+    $(button).setAttribute("aria-selected", tab === name);
+  }
+  if (name === "queues") loadQueues();
+  if (name === "law") metaReady.then(loadLaw);
+}
+for (const [tab, [, button]] of Object.entries(TABS)) $(button).onclick = () => showTab(tab);
+
+// --- meta and filters ------------------------------------------------------------
+let META = {};
+async function loadMeta() {
+  META = await api("/api/meta");
+  document.title = `${META.jurisdiction} legislative record`;
+  $("heading").textContent = `${META.jurisdiction} legislative record`;
+  $("metaLine").textContent = `${META.matters.toLocaleString()} matters and ${META.meetings.toLocaleString()} meetings through ${fmtDate(META.latest_meeting)}. ` +
+    `Answers are written by ${META.chat_model} running on this computer.`;
+  const fill = (id, values) => values.forEach((value) => $(id).append(el("option", {}, value)));
+  fill("fBody", META.bodies); fill("fDepartment", META.departments); fill("fType", META.matter_types); fill("fStatus", META.statuses);
+  for (const [example, mode] of [["embedded social workers in police departments", "search"], ["26-0333", "search"], ["opioid settlement spending", "search"], ["authority for design-build contracts", "search"],
+                                 ["light rail", "topic"], ["affordable housing", "topic"]]) {
+    $("examples").append(el("button", { type: "button", onclick: () => { $("q").value = example; run(mode); } }, mode === "topic" ? example + " over time" : example));
+  }
+}
+function params() {
+  return { q: $("q").value.trim(), top: $("fTop").value, since: $("fSince").value, body: $("fBody").value,
+           department: $("fDepartment").value, type: $("fType").value, status: $("fStatus").value };
+}
+
+// --- ask and search --------------------------------------------------------------
+let stream = null;
+function run(mode) {
+  const query = params();
+  if (!query.q) return;
+  if (stream) { stream.close(); stream = null; }
+  $("answerCard").classList.toggle("hidden", mode !== "ask");
+  $("topicCard").classList.toggle("hidden", mode !== "topic");
+  $("hitsCard").classList.toggle("hidden", mode === "topic");
+  $("lawHitsCard").classList.add("hidden");
+  if (mode === "topic") {
+    $("topicChart").style.opacity = 0.5;
+    api("/api/topic", query).then(renderTopic).catch((error) => {
+      $("topicChart").style.opacity = 1;
+      $("topicChart").replaceChildren(el("div", { class: "error" }, error.message));
+    });
+    return;
+  }
+  $("hits").style.opacity = 0.5;  // hold the previous results while the new ones load
+  if (mode === "search") {
+    api("/api/search", query).then((data) => { renderHits(data.hits, "Results"); renderLawHits(data.law, null); }).catch(showError);
+    return;
+  }
+  const answer = $("answer"), foot = $("answerFoot");
+  let text = "";
+  answer.replaceChildren(el("p", { class: "note" }, "Searching the record…"));
+  foot.replaceChildren();
+  $("askBtn").disabled = true;
+  stream = new EventSource("/api/ask?" + new URLSearchParams(Object.entries(query).filter(([, v]) => v)));
+  const finish = () => { if (stream) stream.close(); stream = null; $("askBtn").disabled = false; };
+  stream.addEventListener("sources", (event) => {
+    const data = JSON.parse(event.data);
+    renderHits(data.hits, "Sources");
+    renderLawHits(data.law, data.hits.length);
+    if (data.dropped) foot.append(el("div", { class: "note" }, `${data.dropped} lower-ranked sources were left out to fit the model's context window.`));
+    answer.replaceChildren(el("p", { class: "note" }, `Reading ${data.hits.length + (data.law || []).length} sources… the first answer after a pause can take a minute while the model loads.`));
+  });
+  stream.addEventListener("token", (event) => { text += JSON.parse(event.data).text; renderAnswer(answer, text); });
+  stream.addEventListener("done", (event) => {
+    const data = JSON.parse(event.data);
+    renderAnswer(answer, text);
+    if (data.unsupported.length) {
+      foot.append(el("div", { class: "warn" }, "Check these against the sources. The answer contains identifiers that do not appear in them:",
+        el("ul", {}, data.unsupported.map((item) => el("li", {}, item)))));
+    }
+    foot.append(el("div", { class: "note" }, `Written by ${data.model} in ${data.seconds} s from the sources below. A small local model can misread; the sources are the record.`));
+    finish();
+  });
+  stream.addEventListener("error", (event) => {
+    const message = event.data ? JSON.parse(event.data).message : "The connection to the local server was lost.";
+    foot.append(el("div", { class: "error" }, message));
+    finish();
+  });
+}
+function showError(error) { $("hits").style.opacity = 1; $("hits").replaceChildren(el("div", { class: "error" }, error.message)); }
+$("askForm").addEventListener("submit", (event) => { event.preventDefault(); run("ask"); });
+$("searchBtn").onclick = () => run("search");
+$("topicBtn").onclick = () => run("topic");
+
+// Minimal rendering of what local models emit: paragraphs, bullets, **bold**, and [n] citations.
+function renderAnswer(container, text) {
+  const blocks = [];
+  let list = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) { list = null; continue; }
+    const bullet = line.match(/^(?:[*\-•]|\d+\.)\s+(.*)$/);
+    if (bullet) {
+      if (!list) { list = el("ul"); blocks.push(list); }
+      list.append(el("li", {}, inline(bullet[1])));
+    } else {
+      list = null;
+      blocks.push(el("p", {}, inline(line.replace(/^#+\s*/, ""))));
+    }
+  }
+  container.replaceChildren(...blocks);
+}
+function inline(text) {
+  const parts = [];
+  for (const piece of text.split(/(\*\*[^*]+\*\*|\[\d+(?:\s*,\s*\d+)*\])/)) {
+    if (!piece) continue;
+    if (piece.startsWith("**")) parts.push(el("strong", {}, piece.slice(2, -2)));
+    else if (/^\[\d/.test(piece)) {
+      for (const n of piece.slice(1, -1).split(",").map((s) => s.trim())) {
+        parts.push(el("button", { class: "cite", type: "button", title: `Show source ${n}`, onclick: () => flashHit(n) }, n));
+      }
+    } else parts.push(document.createTextNode(piece));
+  }
+  return parts;
+}
+function flashHit(n) {
+  const row = document.querySelector(`.hit[data-n="${n}"]`);
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.add("flash");
+  setTimeout(() => row.classList.remove("flash"), 1600);
+}
+function renderHits(hits, title) {
+  $("hits").style.opacity = 1;
+  $("hitsTitle").textContent = `${title} (${hits.length})`;
+  if (!hits.length) { $("hits").replaceChildren(el("div", { class: "note" }, "Nothing matched.")); return; }
+  $("hits").replaceChildren(...hits.map((hit, index) => {
+    const last = hit.history[hit.history.length - 1];
+    const passage = hit.passages.find((p) => p.section !== "title");
+    return el("div", { class: "hit", "data-n": index + 1 },
+      el("div", { class: "n" }, `[${index + 1}]`),
+      el("div", {},
+        el("div", {}, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: hit.matter }) }, hit.file_number), " ",
+          el("span", { class: "pill" }, hit.status || "no status"), " ",
+          hit.awaiting.length ? el("span", { class: "pill" }, "queued for " + hit.awaiting.join(", ")) : null),
+        el("div", { class: "title" }, clip(hit.title, 260)),
+        el("div", { class: "meta" }, [hit.matter_type, hit.department,
+          last ? `last: ${fmtDate(last.date)}, ${last.body}, ${last.action || "on agenda"}` : null,
+          hit.matched_by.length ? "matched by " + hit.matched_by.join(" + ") : null].filter(Boolean).join(" · ")),
+        passage ? el("div", { class: "excerpt" }, clip(passage.text, 300)) : null),
+      el("div", {}, el("button", { class: "btn small", type: "button", onclick: () => openMatter({ id: hit.matter }) }, "Path and links")));
+  }));
+}
+
+// --- drawer: a matter, or a department / statute / body ---------------------------
+const trail = [];
+function openDrawer(render) {
+  trail.push(render);
+  document.body.classList.add("split");
+  $("drawerBack").disabled = trail.length < 2;
+  render();
+}
+$("drawerClose").onclick = () => { trail.length = 0; document.body.classList.remove("split"); tip.style.display = "none"; };
+// The divider: drag it, or focus it and use the arrow keys. The width is remembered in this browser.
+const divider = $("divider");
+function setDrawerWidth(px) {
+  const width = Math.round(Math.max(360, Math.min(px, innerWidth - 340)));
+  document.documentElement.style.setProperty("--drawer-w", width + "px");
+  try { localStorage.setItem("drawerWidth", String(width)); } catch (error) { /* private window: not remembered */ }
+}
+try { const saved = Number(localStorage.getItem("drawerWidth")); if (saved) setDrawerWidth(saved); } catch (error) { /* use the default */ }
+divider.addEventListener("pointerdown", (event) => {
+  divider.setPointerCapture(event.pointerId);
+  divider.classList.add("dragging"); document.body.classList.add("dragging");
+});
+divider.addEventListener("pointermove", (event) => { if (divider.classList.contains("dragging")) setDrawerWidth(innerWidth - event.clientX); });
+for (const type of ["pointerup", "pointercancel"]) divider.addEventListener(type, () => { divider.classList.remove("dragging"); document.body.classList.remove("dragging"); });
+divider.addEventListener("keydown", (event) => {
+  const step = { ArrowLeft: 40, ArrowRight: -40 }[event.key];
+  if (step) { event.preventDefault(); setDrawerWidth($("drawer").getBoundingClientRect().width + step); }
+});
+$("drawerBack").onclick = () => { if (trail.length > 1) { trail.pop(); const render = trail.pop(); openDrawer(render); } };
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") $("drawerClose").click(); });
+const drawerLoading = () => $("drawerBody").replaceChildren(el("div", { class: "note" }, "Loading…"));
+const drawerError = (error) => $("drawerBody").replaceChildren(el("div", { class: "error" }, error.message));
+
+function openMatter(ref) {
+  openDrawer(() => { drawerLoading(); api("/api/matter", ref).then(renderMatter).catch(drawerError); });
+}
+function openNode(id) {
+  openDrawer(() => { drawerLoading(); api("/api/node", { id }).then(renderNode).catch(drawerError); });
+}
+function renderMatter(data) {
+  const card = data.card;
+  const rows = data.journey.flatMap((member) => member.history.map((h) => ({ file: member.file_number, ...h })))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  $("drawerBody").replaceChildren(
+    el("div", { class: "card" },
+      el("h2", {}, card.file_number, " ", el("span", { class: "pill" }, card.status || "no status")),
+      el("div", { class: "title" }, card.title),
+      el("div", { class: "meta" }, [card.matter_type, card.department, card.intro_date ? "introduced " + fmtDate(card.intro_date) : null,
+        card.recommendation ? "administrator: " + card.recommendation : null].filter(Boolean).join(" · ")),
+      card.url ? el("div", { class: "meta" }, el("a", { href: card.url, target: "_blank", rel: "noopener" }, "Open in Legistar")) : null),
+    el("div", { class: "card" },
+      el("h2", {}, "Path through the bodies"),
+      el("div", { class: "sub" }, "Each dot is one appearance on an agenda, left to right in date order. A hollow dot has no action recorded yet."),
+      journeyChart(data.journey),
+      el("details", {}, el("summary", {}, "Show as a table"),
+        el("table", {}, el("tr", {}, ["Date", "Item", "Body", "Action", "Result", "Sent to"].map((h) => el("th", {}, h))),
+          rows.map((r) => el("tr", {}, [fmtDate(r.date), r.file, r.body, r.action || "on agenda, no action yet", r.result || "", r.referred_to || ""].map((v) => el("td", {}, v))))))),
+    el("div", { class: "card" },
+      el("h2", {}, "Connections"),
+      el("div", { class: "sub" }, "What the graph links to this item. Select an item to open it; select a department or body to list everything attached to it; select a statute, session law or ordinance for its text and what else rests on it."),
+      data.neighbours.length ? connectionsChart(card, data.neighbours) : el("div", { class: "note" }, "No links recorded.")),
+    el("div", { class: "card" },
+      el("h2", {}, "Text"),
+      ["resolution", "background"].filter((s) => data.sections[s]).map((s) =>
+        el("details", { open: s === "resolution" ? "" : null }, el("summary", {}, s === "resolution" ? "Resolution" : "Staff background"), el("div", { class: "text" }, data.sections[s]))),
+      Object.keys(data.sections).length ? null : el("div", { class: "note" }, "This item has no text beyond its title."),
+      data.attachments.length ? el("details", {}, el("summary", {}, `Attachments (${data.attachments.length})`),
+        el("ul", {}, data.attachments.map((a) => el("li", {}, el("a", { href: a.url, target: "_blank", rel: "noopener" }, a.name))))) : null));
+  $("drawer").scrollTop = 0;
+}
+function renderNode(node) {
+  if (node.type === "statute" && node.kind) return renderStatute(node);
+  if (node.type === "session_law" && node.year) return renderSessionLaw(node);
+  if (node.type === "ordinance" && "fetched" in node) return renderOrdinance(node);
+  if (node.type === "bill" && node.identifier) return renderBill(node);
+  $("drawerBody").replaceChildren(
+    el("div", { class: "card" },
+      el("h2", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR[node.type]}` }), " ", node.label),
+      el("div", { class: "meta" }, `${node.total.toLocaleString()} matters ${node.relation}` + (node.total > node.matters.length ? `; the ${node.matters.length} most recent are listed` : "")),
+      node.url ? el("div", { class: "meta" }, el("a", { href: node.url, target: "_blank", rel: "noopener" }, "Read the statute at the Revisor's office")) : null),
+    el("div", { class: "card" },
+      el("table", {}, el("tr", {}, ["Item", "Title", "Status", "Last action"].map((h) => el("th", {}, h))),
+        node.matters.map((m) => el("tr", {},
+          el("td", {}, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: m.id }) }, m.file_number)),
+          el("td", {}, clip(m.title, 170)), el("td", {}, m.status || ""), el("td", { style: "white-space:nowrap" }, fmtDate(m.last_action)))))));
+  $("drawer").scrollTop = 0;
+}
+
+// --- chart: an item's path through the bodies -------------------------------------
+// Lanes are bodies, columns are meeting dates in order, one line per item of the
+// family (the original and its revisions).
+function journeyChart(family) {
+  family = family.slice(0, SERIES.length);
+  const dates = [...new Set(family.flatMap((m) => m.history.map((h) => h.date)))].sort();
+  const queued = family.some((m) => m.awaiting.length);
+  const bodies = [];
+  [...family.flatMap((m) => m.history)].sort((a, b) => a.date.localeCompare(b.date)).forEach((h) => { if (!bodies.includes(h.body)) bodies.push(h.body); });
+  family.forEach((m) => m.awaiting.forEach((body) => { if (!bodies.includes(body)) bodies.push(body); }));
+  if (!bodies.length) return el("div", { class: "note" }, "This item has not been on an agenda.");
+  const left = 230, colW = 136, rowH = 70, top = 22, columns = dates.length + (queued ? 1 : 0);
+  const width = left + columns * colW + 16, height = top + bodies.length * rowH + 26;
+  const x = (i) => left + i * colW + colW / 2, y = (body) => top + bodies.indexOf(body) * rowH + rowH / 2;
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Path of the item through the bodies, by meeting date" });
+  bodies.forEach((body) => {
+    root.append(svg("line", { x1: left, x2: width - 8, y1: y(body), y2: y(body), stroke: "var(--grid)", "stroke-width": 1 }));
+    const words = body.split(" "), lines = [""];
+    words.forEach((w) => { if ((lines[lines.length - 1] + " " + w).trim().length > 30) lines.push(w); else lines[lines.length - 1] = (lines[lines.length - 1] + " " + w).trim(); });
+    lines.forEach((line, i) => root.append(svg("text", { x: left - 14, y: y(body) + 4 + (i - (lines.length - 1) / 2) * 15, "text-anchor": "end" }, line)));
+  });
+  dates.forEach((d, i) => root.append(svg("text", { x: x(i), y: height - 6, "text-anchor": "middle", class: "muted" }, fmtDate(d))));
+  if (queued) root.append(svg("text", { x: x(dates.length), y: height - 6, "text-anchor": "middle", class: "muted" }, "next"));
+  family.forEach((member, s) => {
+    const color = SERIES[s], offset = family.length > 1 ? (s - (family.length - 1) / 2) * 18 : 0;
+    const seen = {};
+    const points = member.history.map((h) => {
+      const key = h.date + h.body, nth = (seen[key] = (seen[key] || 0) + 1) - 1;
+      return { h, px: x(dates.indexOf(h.date)) + nth * 14, py: y(h.body) + offset };
+    });
+    if (points.length > 1) root.append(svg("polyline", { points: points.map((p) => `${p.px},${p.py}`).join(" "), fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    const lastPoint = points[points.length - 1];
+    member.awaiting.forEach((body) => {
+      const qx = x(dates.length), qy = y(body) + offset;
+      // Dashed on purpose: this leg has not happened yet.
+      if (lastPoint) root.append(svg("line", { x1: lastPoint.px, y1: lastPoint.py, x2: qx, y2: qy, stroke: color, "stroke-width": 2, "stroke-dasharray": "5 5", "stroke-linecap": "round" }));
+      const mark = svg("g", {}, svg("circle", { cx: qx, cy: qy, r: 6, fill: "var(--surface)", stroke: color, "stroke-width": 2 }),
+        svg("text", { x: qx, y: qy - 13, "text-anchor": "middle", class: "strong halo" }, "queued"),
+        svg("circle", { cx: qx, cy: qy, r: 14, class: "hitarea" }));
+      mark.setAttribute("tabindex", "0");
+      root.append(withTip(mark, `${member.file_number}: queued`, [body, "On a draft agenda under a referral heading; no action recorded yet."]));
+    });
+    points.forEach((p) => {
+      const pending = !p.h.action, above = s % 2 === 0;
+      const mark = svg("g", {},
+        svg("circle", { cx: p.px, cy: p.py, r: 6, fill: pending ? "var(--surface)" : color, stroke: pending ? color : "var(--surface)", "stroke-width": 2 }),
+        svg("text", { x: p.px, y: p.py + (above ? -13 : 22), "text-anchor": "middle", class: "strong halo" }, clip(p.h.action || "on agenda", 21)),
+        svg("circle", { cx: p.px, cy: p.py, r: 14, class: "hitarea" }));
+      mark.setAttribute("tabindex", "0");
+      root.append(withTip(mark, `${member.file_number}: ${p.h.action || "on agenda, no action yet"}`,
+        [`${fmtDate(p.h.date)}, ${p.h.body}`, p.h.result ? `Result: ${p.h.result}` : null, p.h.referred_to ? `Sent to: ${p.h.referred_to}` : null]));
+    });
+  });
+  const legend = family.length > 1 ? el("div", { class: "legend" }, family.map((m, s) =>
+    el("span", {}, el("span", { class: "swatch", style: `background:${SERIES[s]}` }), `${m.file_number} (${m.status || "no status"})`))) : null;
+  return el("div", {}, legend, el("div", { class: "chart" }, root));
+}
+
+// --- chart: the item's neighbours in the graph -------------------------------------
+// The item sits in the middle. What it comes from is on the left, where it went and
+// what points at it on the right. Colour marks the kind of node; every node is labelled.
+function connectionsChart(card, groups) {
+  const rowH = 26, headH = 24, gap = 14, width = 940, cx = width / 2, dotL = 290, dotR = width - 290;
+  const columnHeight = (side) => groups.filter((g) => g.side === side).reduce((sum, g) => sum + headH + (g.nodes.length + (g.more ? 1 : 0)) * rowH + gap, 0);
+  const height = Math.max(columnHeight("in"), columnHeight("out"), 120) + 10, cy = height / 2;
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `Items, bodies, departments and statutes linked to ${card.file_number}` });
+  const links = svg("g", {}), marks = svg("g", {});
+  root.append(links, marks);
+  for (const side of ["in", "out"]) {
+    const dotX = side === "in" ? dotL : dotR, anchor = side === "in" ? "end" : "start", textX = dotX + (side === "in" ? -12 : 12);
+    let cursor = (height - columnHeight(side)) / 2 + 6;
+    for (const group of groups.filter((g) => g.side === side)) {
+      marks.append(svg("text", { x: textX, y: cursor + 12, "text-anchor": anchor, class: "muted", style: "text-transform:uppercase;letter-spacing:.04em;font-size:11px" }, group.name));
+      cursor += headH;
+      for (const node of group.nodes) {
+        const ny = cursor + rowH / 2 - 4;
+        const link = svg("path", { d: `M${cx},${cy} C${(cx + dotX) / 2},${cy} ${(cx + dotX) / 2},${ny} ${dotX},${ny}`, fill: "none", stroke: "var(--axis)", "stroke-width": 1.5 });
+        links.append(link);
+        const label = node.type === "matter" ? `${node.label}  ${clip(node.detail, 30)}` : clip(node.label, 42);
+        const mark = svg("g", {},
+          svg("rect", { x: side === "in" ? 4 : dotX - 12, y: ny - rowH / 2, width: dotL + 8, height: rowH, class: "hitarea" }),
+          svg("circle", { cx: dotX, cy: ny, r: 6, fill: TYPE_COLOR[node.type], stroke: "var(--surface)", "stroke-width": 2 }),
+          svg("text", { x: textX, y: ny + 4, "text-anchor": anchor, class: node.type === "matter" ? "strong" : "" }, label));
+        const highlight = (on) => { link.setAttribute("stroke", on ? TYPE_COLOR[node.type] : "var(--axis)"); link.setAttribute("stroke-width", on ? 2.5 : 1.5); };
+        mark.addEventListener("pointerenter", () => highlight(true)); mark.addEventListener("pointerleave", () => highlight(false));
+        mark.addEventListener("focus", () => highlight(true)); mark.addEventListener("blur", () => highlight(false));
+        clickable(mark, () => (node.type === "matter" ? openMatter({ id: node.id }) : openNode(node.id)));
+        marks.append(withTip(mark, node.label, [node.detail, `${group.name.toLowerCase()} · select to open`]));
+        cursor += rowH;
+      }
+      if (group.more) { marks.append(svg("text", { x: textX, y: cursor + rowH / 2, "text-anchor": anchor, class: "muted" }, `and ${group.more} more`)); cursor += rowH; }
+      cursor += gap;
+    }
+  }
+  marks.append(svg("circle", { cx, cy, r: 9, fill: TYPE_COLOR.matter, stroke: "var(--surface)", "stroke-width": 2 }),
+    svg("text", { x: cx, y: cy - 16, "text-anchor": "middle", class: "strong", style: "font-size:13px" }, card.file_number));
+  const legend = el("div", { class: "legend" }, [["Item", "matter"], ["Body or department", "body"], ["Law", "statute"]].map(([name, type]) =>
+    el("span", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR[type]}` }), name)));
+  return el("div", {}, legend, el("div", { class: "chart" }, root));
+}
+
+// --- chart: a topic over time ------------------------------------------------------
+// Stacked columns: one per quarter, one segment per requesting department. The five
+// largest departments get a colour each, in a fixed order; the rest fold into "Other".
+const TOPIC_COLORS = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)", "var(--series-5)"];
+function topicColor(data, department) {
+  if (department === "Other departments") return "var(--neutral-1)";
+  if (department === "No department") return "var(--neutral-2)";
+  return TOPIC_COLORS[data.departments.indexOf(department)];
+}
+function renderTopic(data) {
+  const chart = $("topicChart"), table = $("topicTable");
+  chart.style.opacity = 1;
+  $("topicTitle").textContent = `"${data.query}" over time`;
+  $("topicSub").textContent = `${data.total.toLocaleString()} matters contain every word of the query, counted in the quarter each was introduced and coloured by requesting department.`;
+  if (!data.total) {
+    chart.replaceChildren(el("div", { class: "note" }, "No matter contains all of those words. Try fewer words: this view counts exact wording, unlike Search, which ranks by meaning."));
+    table.replaceChildren();
+    return;
+  }
+  const quarters = data.quarters, max = Math.max(...quarters.map((q) => q.total), 1);
+  const step = max <= 5 ? 1 : max <= 12 ? 2 : max <= 30 ? 5 : max <= 60 ? 10 : 20, top = Math.ceil(max / step) * step;
+  const left = 40, colW = 52, barW = 22, plotH = 220, topPad = 14, width = left + quarters.length * colW + 12, height = topPad + plotH + 46;
+  const y = (n) => topPad + plotH - (n / top) * plotH;
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `Matters about ${data.query} per quarter, by requesting department` });
+  for (let tick = 0; tick <= top; tick += step) {
+    root.append(svg("line", { x1: left, x2: width - 8, y1: y(tick), y2: y(tick), stroke: tick ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }),
+      svg("text", { x: left - 8, y: y(tick) + 4, "text-anchor": "end", class: "muted", style: "font-variant-numeric:tabular-nums" }, String(tick)));
+  }
+  const partial = (label) => label === quarters[0].quarter || label === quarters[quarters.length - 1].quarter;
+  let selected = null;
+  const showRows = () => {
+    const rows = data.matters.filter((m) => !selected || m.quarter === selected);
+    table.replaceChildren(
+      el("div", { class: "note" }, selected ? `${rows.length} matters introduced in ${selected}. ` : `All ${rows.length} matters, newest first. Select a column to narrow to one quarter. `,
+        selected ? el("button", { class: "btn small", type: "button", onclick: () => { selected = null; showRows(); } }, "Show all quarters") : null),
+      el("table", {}, el("tr", {}, ["Item", "Title", "Department", "Status", "Introduced"].map((h) => el("th", {}, h))),
+        rows.slice(0, 300).map((m) => el("tr", {},
+          el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: m.id }) }, m.file_number)),
+          el("td", {}, clip(m.title, 160)), el("td", {}, m.department), el("td", {}, m.status || ""), el("td", { style: "white-space:nowrap" }, fmtDate(m.date))))));
+  };
+  quarters.forEach((quarter, i) => {
+    const x = left + i * colW + (colW - barW) / 2, [year, q] = quarter.quarter.split(" ");
+    const column = svg("g", {}, svg("rect", { x: left + i * colW, y: topPad, width: colW, height: plotH + 40, class: "hitarea" }));
+    let stacked = 0;
+    const present = data.departments.filter((d) => quarter.counts[d]);
+    present.forEach((department, n) => {
+      const y0 = y(stacked), y1 = y(stacked + quarter.counts[department]);
+      stacked += quarter.counts[department];
+      const h = Math.max(y0 - y1 - (n ? 2 : 0), 1), yTop = y1, r = n === present.length - 1 ? Math.min(4, h) : 0;  // 2px surface gap between segments; only the top end is rounded
+      column.append(svg("path", { d: `M${x},${yTop + h} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${barW - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z`, fill: topicColor(data, department) }));
+    });
+    if (quarter.total === max) column.append(svg("text", { x: x + barW / 2, y: y(quarter.total) - 6, "text-anchor": "middle", class: "strong" }, String(quarter.total)));
+    column.append(svg("text", { x: x + barW / 2, y: topPad + plotH + 16, "text-anchor": "middle", class: "muted" }, q + (partial(quarter.quarter) ? "*" : "")));
+    if (q === "Q1" || i === 0) column.append(svg("text", { x: x + barW / 2, y: topPad + plotH + 32, "text-anchor": "middle" }, year));
+    clickable(column, () => { selected = quarter.quarter; showRows(); });
+    root.append(withTip(column, `${quarter.total} matters`, [quarter.quarter + (partial(quarter.quarter) ? " (partial quarter)" : ""),
+      ...present.slice().reverse().map((d) => `${quarter.counts[d]}  ${d}`)]));
+  });
+  const legend = el("div", { class: "legend" }, data.departments.map((d) =>
+    el("span", {}, el("span", { class: "swatch", style: `border-radius:2px;background:${topicColor(data, d)}` }), d === "No department" ? "No department recorded" : d)));
+  chart.replaceChildren(legend, el("div", { class: "chart" }, root),
+    el("div", { class: "note" }, `* Partial quarter: the record runs from ${fmtDate(data.record_starts)} to ${fmtDate(data.record_ends)}.`));
+  showRows();
+}
+
+// --- coming up ------------------------------------------------------------------
+function queueTable(items, withBody) {
+  return el("table", {}, el("tr", {}, ["Item", "Title", "Department", withBody ? "Sent to" : null, "Why it is listed", "Since"].filter(Boolean).map((h) => el("th", {}, h))),
+    items.map((item) => el("tr", {},
+      el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: item.id }) }, item.file_number)),
+      el("td", {}, clip(item.title, 180)), el("td", {}, item.department || ""), withBody ? el("td", {}, item.body) : null,
+      el("td", {}, item.reason), el("td", { style: "white-space:nowrap" }, fmtDate(item.date)))));
+}
+let queuesLoaded = false;
+async function loadQueues() {
+  if (queuesLoaded) return;
+  queuesLoaded = true;
+  const data = await api("/api/queues");
+  const chart = $("queueChart");
+  if (!data.queues.length) chart.replaceChildren(el("div", { class: "note" }, "Nothing is waiting on a body right now."));
+  else {
+    const left = 330, barH = 16, rowH = 34, width = 900, max = Math.max(...data.queues.map((q) => q.items.length));
+    const scale = (n) => (n / max) * (width - left - 60);
+    const root = svg("svg", { width, height: data.queues.length * rowH + 8, viewBox: `0 0 ${width} ${data.queues.length * rowH + 8}`, role: "img", "aria-label": "Number of items coming up for each body" });
+    data.queues.forEach((queue, i) => {
+      const yMid = i * rowH + rowH / 2 + 4, w = Math.max(scale(queue.items.length), 6);
+      const bar = svg("g", {},
+        svg("rect", { x: 0, y: i * rowH + 4, width, height: rowH, class: "hitarea" }),
+        svg("text", { x: left - 12, y: yMid + 4, "text-anchor": "end" }, queue.body),
+        // square at the baseline, rounded at the data end
+        svg("path", { d: `M${left},${yMid - barH / 2} h${w - 4} a4,4 0 0 1 4,4 v${barH - 8} a4,4 0 0 1 -4,4 h${-(w - 4)} z`, fill: "var(--series-1)" }),
+        svg("text", { x: left + w + 8, y: yMid + 4, class: "strong" }, String(queue.items.length)));
+      clickable(bar, () => document.getElementById("queue-" + i).scrollIntoView({ behavior: "smooth", block: "start" }));
+      root.append(withTip(bar, `${queue.items.length} items`, [queue.body, "Select to see the list"]));
+    });
+    root.append(svg("line", { x1: left, x2: left, y1: 4, y2: data.queues.length * rowH + 4, stroke: "var(--axis)", "stroke-width": 1 }));
+    chart.replaceChildren(root);
+  }
+  $("queueLists").replaceChildren(...data.queues.map((queue, i) => el("div", { class: "card", id: "queue-" + i },
+    el("h2", {}, `${queue.body} (${queue.items.length})`),
+    queueTable(queue.items, false))),
+    ...(data.stale.length ? [el("div", { class: "card" },
+      el("h2", {}, `Sent somewhere more than ${data.stale_days} days ago and not heard since (${data.stale.length})`),
+      el("div", { class: "sub" }, "Probably leftovers in the record rather than a backlog, so they are not counted above."),
+      queueTable(data.stale, true))] : []));
+  $("meetings").replaceChildren(data.meetings.length ? el("table", {},
+    el("tr", {}, el("th", {}, "Date"), el("th", {}, "Body"), el("th", {}, "Minutes"), el("th", { class: "num" }, "Items"), el("th", {}, "")),
+    data.meetings.map((m) => el("tr", {}, el("td", { style: "white-space:nowrap" }, fmtDate(m.date)), el("td", {}, m.body), el("td", {}, m.minutes_status),
+      el("td", { class: "num" }, String(m.items)), el("td", {}, m.url ? el("a", { href: m.url, target: "_blank", rel: "noopener" }, "Legistar") : null))))
+    : el("div", { class: "note" }, "All recent minutes are final."));
+}
+
+
+// --- the law: related law under a search, and the Law tab ------------------------------
+const lawLabel = (hit) => hit.title && !hit.label.includes(hit.title) ? `${hit.label}  ${hit.title}` : hit.label;
+const statusPill = (status) => status && status !== "in force" ? el("span", { class: "pill alert" }, status) : null;
+const setKids = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filter((kid) => kid != null && kid !== false));
+const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+
+// offset is the number of record sources above, when the law is numbered as sources of an answer.
+function renderLawHits(law, offset) {
+  $("lawHitsCard").classList.toggle("hidden", !law || !law.length);
+  setKids($("hitsNote"), law && law.length && offset == null
+    ? el("button", { class: "filelink", type: "button", style: "font-weight:400", onclick: () => $("lawHitsCard").scrollIntoView({ behavior: "smooth", block: "start" }) },
+        `${plural(law.length, "statute section")} or ordinance${law.length === 1 ? "" : "s"} also match: see Related law below`) : null);
+  if (!law || !law.length) return;
+  $("lawHitsTitle").textContent = offset == null ? `Related law (${law.length})` : `Law given to the model (${law.length})`;
+  setKids($("lawHits"), ...law.map((hit, index) => {
+    const passage = hit.passages[0];
+    return el("div", { class: "hit", "data-n": offset == null ? null : offset + index + 1 },
+      el("div", { class: "n" }, offset == null ? "" : `[${offset + index + 1}]`),
+      el("div", {},
+        el("div", {}, el("button", { class: "filelink", type: "button", onclick: () => openNode(passage ? passage.source : hit.id) }, hit.label), " ", statusPill(hit.status)),
+        el("div", { class: "title" }, hit.title || ""),
+        el("div", { class: "meta" }, [hit.kind === "ordinance" ? "county ordinance" : "Minnesota Statutes",
+          hit.cited_by ? `cited by ${plural(hit.cited_by, "matter")}` : "not cited in the record",
+          hit.matched_by.length ? "matched by " + hit.matched_by.join(" + ") : null].filter(Boolean).join(" · ")),
+        passage ? el("div", { class: "excerpt" }, el("b", {}, passage.label.replace(hit.label, "").replace(/^, /, "") + (passage.heading && passage.heading !== hit.title ? " " + passage.heading : "")), " ", clip(passage.text, 300)) : null),
+      el("div", {}, el("button", { class: "btn small", type: "button", onclick: () => openNode(passage ? passage.source : hit.id) }, "Text and links")));
+  }));
+}
+
+// Session-law text marks struck words as [-...-] and inserted words as {+...+}.
+function markedText(text) {
+  const parts = [];
+  for (const piece of (text || "").split(/(\{\+[\s\S]*?\+\}|\[-[\s\S]*?-\])/)) {
+    if (!piece) continue;
+    if (piece.startsWith("{+")) parts.push(el("ins", {}, piece.slice(2, -2)));
+    else if (piece.startsWith("[-")) parts.push(el("del", {}, piece.slice(2, -2)));
+    else parts.push(document.createTextNode(piece));
+  }
+  return el("div", { class: "text marked" }, parts);
+}
+function openLawText(law, anchor) {
+  openDrawer(() => {
+    drawerLoading();
+    api("/api/law_text", { law, anchor }).then((data) => {
+      setKids($("drawerBody"), el("div", { class: "card" },
+        el("h2", {}, `${data.law}, ${data.label.replace(/\.$/, "")}`),
+        data.heading ? el("div", { class: "title" }, data.heading) : null,
+        el("div", { class: "meta" }, data.effective ? "Effective date: " + data.effective : "This section states no effective date of its own.", " ",
+          el("a", { href: data.url, target: "_blank", rel: "noopener" }, "Read it at the Revisor's office")),
+        el("div", { class: "legend", style: "margin-top:10px" }, el("span", {}, el("ins", {}, "inserted")), el("span", {}, el("del", {}, "struck"))),
+        markedText(data.marked)));
+      $("drawer").scrollTop = 0;
+    }).catch(drawerError);
+  });
+}
+const nodeLink = (id, label) => el("button", { class: "filelink", type: "button", onclick: () => openNode(id) }, label);
+const outLink = (url, label) => url ? el("a", { href: url, target: "_blank", rel: "noopener" }, label) : null;
+function mattersCard(node, title) {
+  if (!node.total) return el("div", { class: "card" }, el("h2", {}, title), el("div", { class: "note" }, "No item in the record cites it."));
+  return el("div", { class: "card" },
+    el("h2", {}, `${title} (${node.total.toLocaleString()})`),
+    node.total > node.matters.length ? el("div", { class: "sub" }, `The ${node.matters.length} most recent are listed.`) : null,
+    el("table", {}, el("tr", {}, ["Item", "Title", "Status", "Last action"].map((h) => el("th", {}, h))),
+      node.matters.map((m) => el("tr", {},
+        el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: m.id }) }, m.file_number)),
+        el("td", {}, clip(m.title, 170)), el("td", {}, m.status || ""), el("td", { style: "white-space:nowrap" }, fmtDate(m.last_action))))));
+}
+// Rows of "this session law changed that statute". withStatute adds the statute columns.
+function changesTable(changes, withStatute) {
+  return el("table", {},
+    el("tr", {}, [withStatute ? "Statute" : "Session", "Change", "Made by", "Effective", withStatute ? "The record relies on it" : null].filter((h) => h != null).map((h) => el("th", {}, h))),
+    changes.map((c) => el("tr", {},
+      withStatute
+        ? el("td", {}, nodeLink(c.subdivision ? `mnstat:${c.statute}#${c.subdivision}` : `mnstat:${c.statute}`, `§ ${c.statute}` + (c.subdivision ? `, subd. ${c.subdivision}` : "")),
+            el("div", { class: "meta" }, clip(c.headnote, 70)))
+        : el("td", {}, String(c.year)),
+      el("td", {}, withStatute ? null : (c.subdivision ? `subd. ${c.subdivision} ` : "section "), el("span", { class: "pill" + (c.action === "Repealed" ? " alert" : "") }, c.action.toLowerCase())),
+      el("td", {}, el("span", { style: "white-space:nowrap" }, nodeLink(c.law, c.law_label)), [c.article ? `, art. ${c.article}` : "", c.section ? `, sec. ${c.section}` : ""].join(""),
+        c.has_text ? el("div", {}, el("button", { class: "btn small", type: "button", style: "margin-top:3px;white-space:nowrap", onclick: () => openLawText(c.law, c.anchor) }, "Show the change")) : null),
+      el("td", {}, c.effective ? clip(c.effective.replace(/^This section is effective /, ""), 90) : el("span", { class: "meta" }, "not stated here")),
+      withStatute ? el("td", {}, [c.matters ? plural(c.matters, "matter") : null,
+        c.subdivision_matters ? `${c.subdivision_matters} cite this subdivision` : null,
+        c.ordinances ? plural(c.ordinances, "ordinance") : null].filter(Boolean).join("; ") || el("span", { class: "meta" }, "not cited")) : null)));
+}
+
+function renderStatute(node) {
+  const fetched = node.fetched;
+  const body = [el("div", { class: "card" },
+    el("h2", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR.statute}` }), " ", node.label, " ", statusPill(node.status)),
+    node.headnote ? el("div", { class: "title" }, node.headnote) : null,
+    el("div", { class: "meta" }, [node.kind === "section" ? nodeLink(`mnstat:${node.chapter}`, `Chapter ${node.chapter}`) : null,
+      node.heading ? ` · ${node.heading}` : null, node.edition ? ` · ${node.edition} edition` : null]),
+    node.note ? el("div", { class: "warn" }, node.note) : null,
+    fetched ? null : el("div", { class: "warn" }, node.kind === "section"
+      ? "This number is cited in the record, but Minnesota Statutes as published has no such section. The citation may be wrong."
+      : "This chapter has not been fetched. Run legistutor ingest-law to add it."),
+    el("div", { class: "meta" }, outLink(node.url, "Read it at the Revisor's office"), fetched ? ". The Revisor's publication is the official text; this copy is for finding and linking." : null))];
+  if (node.kind === "chapter") {
+    const sections = node.sections || [];
+    const notable = sections.filter((s) => s.matters || s.changes);
+    const row = (s) => el("tr", {}, el("td", { style: "white-space:nowrap" }, nodeLink(s.id, s.number)), el("td", {}, s.headnote || "", " ", s.status == null ? el("span", { class: "pill alert" }, "cited, but no such section") : statusPill(s.status)),
+      el("td", { class: "num" }, s.matters ? String(s.matters) : ""), el("td", { class: "num" }, s.changes ? String(s.changes) : ""));
+    const head = el("tr", {}, el("th", {}, "Section"), el("th", {}, "Headnote"), el("th", { class: "num" }, "Matters citing"), el("th", { class: "num" }, "Changes since 2023"));
+    if (sections.length) body.push(el("div", { class: "card" },
+      el("h2", {}, `Sections cited by the record or changed since 2023 (${notable.length} of ${sections.length})`),
+      notable.length ? el("table", {}, head, notable.map(row)) : el("div", { class: "note" }, "None."),
+      el("details", {}, el("summary", {}, `All ${sections.length} sections`), el("table", {}, head.cloneNode(true), sections.map(row)))));
+    body.push(mattersCard(node, "Items citing this chapter or its sections"));
+  } else {
+    if (node.changes && node.changes.length) body.push(el("div", { class: "card" },
+      el("h2", {}, `Changed by the legislature since 2023 (${node.changes.length})`), changesTable(node.changes, false)));
+    if (fetched) body.push(el("div", { class: "card" },
+      el("h2", {}, "Text"),
+      node.text ? el("div", { class: "text" }, node.text) : null,
+      (node.subdivisions || []).map((d) => el("div", { class: "subd" + (node.focus === d.id ? " focus" : ""), id: node.focus === d.id ? "focusSubd" : null },
+        el("div", {}, el("b", {}, `Subd. ${d.number}. `, d.headnote || ""), " ", statusPill(d.status), " ",
+          d.matters ? el("span", { class: "pill" }, `cited by ${plural(d.matters, "matter")}`) : null),
+        el("div", { class: "text" }, d.text || ""))),
+      node.history ? el("div", { class: "note" }, "History: " + node.history) : null));
+    body.push(mattersCard(node, "Items citing this section"));
+    const links = [["Ordinances citing it", node.ordinances], ["Refers to", node.refers_to], ["Referred to by", node.referred_by]].filter(([, list]) => list && list.length);
+    if (links.length) body.push(el("div", { class: "card" }, el("h2", {}, "Links in the law"),
+      links.map(([title, list]) => [el("h3", {}, title), el("div", { class: "chips" }, list.map((item) => nodeLink(item.id, item.label + (item.states_authority ? " (states its authority)" : ""))))])));
+  }
+  setKids($("drawerBody"), ...body);
+  const focus = document.getElementById("focusSubd");
+  if (focus) focus.scrollIntoView({ block: "center" }); else $("drawer").scrollTop = 0;
+}
+function renderSessionLaw(node) {
+  setKids($("drawerBody"), 
+    el("div", { class: "card" },
+      el("h2", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR.statute}` }), " ", node.label),
+      node.title ? el("div", { class: "title" }, node.title) : null,
+      el("div", { class: "meta" }, [node.bill_node ? ["Enacted from ", nodeLink(node.bill_node.id, node.bill_node.identifier), " · "] : (node.bill ? `Enacted from ${node.bill} · ` : null),
+        node.presented ? `presented to the governor ${fmtDate(node.presented)} · ` : null, outLink(node.url, "Read it at the Revisor's office")]),
+      node.bill_node ? el("div", { class: "meta" }, node.bill_node.title) : null,
+      node.summary ? el("details", {}, el("summary", {}, "What the act says it relates to"), el("div", { class: "text" }, node.summary)) : null),
+    node.changes && node.changes.length ? el("div", { class: "card" },
+      el("h2", {}, `Statutes it changed, among the chapters fetched (${node.changes.length})`), changesTable(node.changes, true)) : null,
+    el("div", { class: "card" },
+      el("h2", {}, `Items citing this law (${node.total})`),
+      node.citations && node.citations.length ? el("table", {}, el("tr", {}, el("th", {}, "Item"), el("th", {}, "As cited")),
+        node.citations.map((c) => el("tr", {}, el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ file: c.file_number }) }, c.file_number)), el("td", {}, c.citation))))
+        : el("div", { class: "note" }, "No item in the record cites it by chapter number.")));
+  $("drawer").scrollTop = 0;
+}
+function renderOrdinance(node) {
+  setKids($("drawerBody"), 
+    el("div", { class: "card" },
+      el("h2", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR.statute}` }), " ", node.number ? `Ordinance ${node.number}` : node.label),
+      node.title ? el("div", { class: "title" }, node.title) : null,
+      node.fetched ? el("div", { class: "meta" }, [node.category, node.adopted ? "adopted " + fmtDate(node.adopted) : null, node.amended ? "last amended " + fmtDate(node.amended) : null].filter(Boolean).join(" · "))
+        : el("div", { class: "warn" }, "The record cites this ordinance number, but the county's ordinance pages list no ordinance with it."),
+      node.notice ? el("div", { class: "warn" }, node.notice) : null,
+      el("div", { class: "meta" }, outLink(node.url, "Read it on the county's website"), node.pdf_url ? [" · ", outLink(node.pdf_url, "PDF copy")] : null)),
+    node.statutes && node.statutes.length ? el("div", { class: "card" },
+      el("h2", {}, `Statutes it cites (${node.statutes.length})`),
+      el("table", {}, el("tr", {}, el("th", {}, "Statute"), el("th", {}, "Headnote"), el("th", {}, ""), el("th", { class: "num" }, "Changes since 2023")),
+        node.statutes.map((s) => el("tr", {}, el("td", { style: "white-space:nowrap" }, nodeLink(s.id, s.label.replace("Minn. Stat. ", ""))),
+          el("td", {}, s.headnote || "", " ", statusPill(s.status), s.status == null ? el("span", { class: "pill" }, "not fetched or not found") : null),
+          el("td", {}, s.states_authority ? "cited as its authority" : ""), el("td", { class: "num" }, s.changes ? String(s.changes) : ""))))) : null,
+    mattersCard(node, "Items citing this ordinance"),
+    node.sections && node.sections.length ? el("div", { class: "card" }, el("h2", {}, "Text"),
+      node.sections.map((s, i) => el("details", { open: i === 0 ? "" : null }, el("summary", {}, s.heading || "Opening"), el("div", { class: "text" }, s.text)))) : null);
+  $("drawer").scrollTop = 0;
+}
+function renderBill(node) {
+  setKids($("drawerBody"), 
+    el("div", { class: "card" },
+      el("h2", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR.statute}` }), " ", node.identifier, " ", el("span", { class: "pill" }, node.session),
+        " ", node.law ? el("span", { class: "pill" }, "became law") : null),
+      el("div", { class: "title" }, node.title),
+      el("div", { class: "meta" }, [node.chamber, node.sponsors ? "chief author " + node.sponsors : null, node.subjects].filter(Boolean).join(" · ")),
+      node.law ? el("div", { class: "meta" }, "Enacted as ", nodeLink(node.law.id, node.law.label)) : null,
+      node.companions.length ? el("div", { class: "meta" }, "Companion: ", node.companions.map((c) => [nodeLink(c.id, c.identifier), " "])) : null,
+      el("div", { class: "meta" }, outLink(node.url, "Bill page at the Revisor's office"), " · ", outLink(node.openstates_url, "Open States"))),
+    el("div", { class: "card" }, el("h2", {}, `Actions (${node.actions.length})`),
+      el("table", {}, el("tr", {}, el("th", {}, "Date"), el("th", {}, "Chamber"), el("th", {}, "Action")),
+        node.actions.map((a) => el("tr", {}, el("td", { style: "white-space:nowrap" }, fmtDate(a.date)), el("td", {}, a.chamber || ""), el("td", {}, a.description))))));
+  $("drawer").scrollTop = 0;
+}
+
+// Sessions as columns, stacked by what was done. Select a column to list that session.
+const ACTION_COLORS = { Amended: "var(--series-1)", New: "var(--series-2)", Repealed: "var(--series-3)", Other: "var(--neutral-1)" };
+function changesChart(data, onSelect) {
+  const years = data.years, max = Math.max(...years.map((y) => y.total), 1);
+  const step = max <= 12 ? 2 : max <= 30 ? 5 : max <= 60 ? 10 : max <= 150 ? 25 : 50, top = Math.ceil(max / step) * step;
+  const left = 40, colW = 84, barW = 26, plotH = 150, topPad = 18, width = left + years.length * colW + 12, height = topPad + plotH + 28;
+  const y = (n) => topPad + plotH - (n / top) * plotH;
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Changes to cited statute sections, per session, by kind of change" });
+  for (let tick = 0; tick <= top; tick += step) {
+    root.append(svg("line", { x1: left, x2: width - 8, y1: y(tick), y2: y(tick), stroke: tick ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }),
+      svg("text", { x: left - 8, y: y(tick) + 4, "text-anchor": "end", class: "muted", style: "font-variant-numeric:tabular-nums" }, String(tick)));
+  }
+  years.forEach((year, i) => {
+    const x = left + i * colW + (colW - barW) / 2, present = data.actions.filter((a) => year.counts[a]);
+    const column = svg("g", {}, svg("rect", { x: left + i * colW, y: topPad - 14, width: colW, height: plotH + 40, class: "hitarea" }));
+    let stacked = 0;
+    present.forEach((action, n) => {
+      const y0 = y(stacked), y1 = y(stacked + year.counts[action]);
+      stacked += year.counts[action];
+      const h = Math.max(y0 - y1 - (n ? 2 : 0), 1), r = n === present.length - 1 ? Math.min(4, h) : 0;
+      column.append(svg("path", { d: `M${x},${y1 + h} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${barW - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z`, fill: ACTION_COLORS[action] }));
+    });
+    column.append(svg("text", { x: x + barW / 2, y: y(year.total) - 6, "text-anchor": "middle", class: "strong" }, String(year.total)),
+      svg("text", { x: x + barW / 2, y: topPad + plotH + 18, "text-anchor": "middle", class: year.year === data.year ? "strong" : "" }, String(year.year)));
+    if (year.year === data.year) column.append(svg("rect", { x: x - 6, y: topPad + plotH + 23, width: barW + 12, height: 3, rx: 1.5, fill: "var(--ink)" }));
+    clickable(column, () => onSelect(year.year));
+    root.append(withTip(column, `${year.total} changes in ${year.year}`, [...present.slice().reverse().map((a) => `${year.counts[a]}  ${a.toLowerCase()}`), "Select to list them"]));
+  });
+  const legend = el("div", { class: "legend" }, data.actions.map((a) => el("span", {}, el("span", { class: "swatch", style: `border-radius:2px;background:${ACTION_COLORS[a]}` }), a)));
+  return el("div", {}, legend, el("div", { class: "chart" }, root));
+}
+async function loadChanges(year) {
+  const data = await api("/api/changes", { year, scope: $("lawScope").value });
+  $("lawMissing").classList.toggle("hidden", data.available);
+  $("lawBody").classList.toggle("hidden", !data.available);
+  if (!data.available) return;
+  if (!$("lawYear").options.length) data.years.slice().reverse().forEach((y) => $("lawYear").append(el("option", { value: y.year }, `${y.year} (${y.total} to cited sections)`)));
+  $("lawYear").value = data.year;
+  setKids($("lawChart"), changesChart(data, (selected) => loadChanges(selected)),
+    el("div", { class: "note" }, "The chart counts changes to sections that the record or an ordinance cites. Each row of the state's table is one change: a section or subdivision that a session law created, amended or repealed."));
+  setKids($("lawChanges"), 
+    el("h3", {}, `${data.year} session: ${data.total.toLocaleString()} changes` + (data.scope === "cited" ? " to cited sections, most relied on first" : " in the chapters fetched, most relied on first")),
+    data.changes.length ? changesTable(data.changes, true) : el("div", { class: "note" }, "None."),
+    data.total > data.changes.length ? el("div", { class: "note" }, `The first ${data.changes.length} are listed.`) : null,
+    el("div", { class: "note" }, "This says that the law under an item moved, not what the move means: that is for the County Attorney's Office. Where a section gives no date, an act takes effect on August 1 after its enactment, or July 1 for an appropriation, under Minn. Stat. § 645.02."));
+  $("lawCheckTitle").textContent = `Citations to check (${data.to_check.length})`;
+  setKids($("lawCheck"), data.to_check.length ? el("table", {},
+    el("tr", {}, ["Item", "Cites", "", "As published by the Revisor", "Last action"].map((h) => el("th", {}, h))),
+    data.to_check.map((c) => el("tr", {},
+      el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: c.matter }) }, c.file_number), el("div", { class: "meta" }, clip(c.title, 60))),
+      el("td", { style: "white-space:nowrap" }, nodeLink(c.statute, c.label.replace("Minn. Stat. ", ""))), el("td", {}, el("span", { class: "pill alert" }, c.status)),
+      el("td", {}, c.note || "No such section in the chapter."), el("td", { style: "white-space:nowrap" }, fmtDate(c.last_action)))))
+    : el("div", { class: "note" }, "Every cited section is in force."));
+}
+let lawLoaded = false;
+async function loadLaw() {
+  if (lawLoaded) return;
+  lawLoaded = true;
+  const law = META.law;
+  if (law) $("lawSub").textContent = `${law.sections.toLocaleString()} sections in ${law.chapters} chapters of the ${law.edition} Minnesota Statutes: every chapter that an item in the record or a county ordinance cites. ` +
+    "After each session the state publishes which sections it created, amended or repealed; here that list is joined to the record.";
+  await loadChanges();
+  const ordinances = (await api("/api/ordinances")).ordinances;
+  $("lawOrdTitle").textContent = `County ordinances (${ordinances.length})`;
+  setKids($("lawOrdinances"), ordinances.length ? el("table", {},
+    el("tr", {}, el("th", {}, "No."), el("th", {}, "Ordinance"), el("th", {}, "Last amended"), el("th", { class: "num" }, "Matters citing"), el("th", { class: "num" }, "Statutes cited")),
+    ordinances.map((o) => el("tr", {}, el("td", {}, o.number || ""),
+      el("td", {}, nodeLink(o.id, o.title), o.notice ? [" ", el("span", { class: "pill" }, "being revised")] : null,
+        o.statutes_not_in_force ? [" ", el("span", { class: "pill alert" }, `${o.statutes_not_in_force} cited statute${o.statutes_not_in_force === 1 ? "" : "s"} not in force`)] : null,
+        el("div", { class: "meta" }, o.category)),
+      el("td", { style: "white-space:nowrap" }, fmtDate(o.amended) || (o.adopted ? "adopted " + fmtDate(o.adopted) : "")),
+      el("td", { class: "num" }, o.matters ? String(o.matters) : ""), el("td", { class: "num" }, o.statutes ? String(o.statutes) : ""))))
+    : el("div", { class: "note" }, "No ordinances have been fetched."));
+  if (law && law.bills) {
+    law.bill_sessions.forEach((s) => $("billSession").append(el("option", {}, s)));
+    $("billSub").textContent = `${law.bills.toLocaleString()} bills from the sessions since 2023, from Open States. Titles are the legislature's short descriptions; a bill that affects the county without naming it will not match the county's name.`;
+    $("billQ").value = META.jurisdiction.split(" ")[0];
+    loadBills();
+  } else setKids($("billTable"), el("div", { class: "note" }, "No bills have been fetched."));
+}
+async function loadBills() {
+  const data = await api("/api/bills", { q: $("billQ").value.trim(), session: $("billSession").value, enacted: $("billEnacted").checked ? "1" : "" });
+  setKids($("billTable"), 
+    el("div", { class: "note" }, `${data.more ? "More than " : ""}${plural(data.bills.length, "bill")}, latest action first.`),
+    data.bills.length ? el("table", {}, el("tr", {}, ["Bill", "Title", "Author", "Last action"].map((h) => el("th", {}, h))),
+      data.bills.map((b) => el("tr", {},
+        el("td", { style: "white-space:nowrap" }, nodeLink(b.id, b.identifier), el("div", { class: "meta" }, b.session)),
+        el("td", {}, clip(b.title, 220), b.law ? [" ", nodeLink(b.law, b.law_label)] : null), el("td", {}, b.sponsors || ""),
+        el("td", {}, fmtDate(b.last_action), el("div", { class: "meta" }, clip(b.last_action_text, 60)))))) : null);
+}
+$("lawYear").onchange = () => loadChanges($("lawYear").value);
+$("lawScope").onchange = () => loadChanges($("lawYear").value);
+$("billForm").addEventListener("submit", (event) => { event.preventDefault(); loadBills(); });
+$("billSession").onchange = loadBills; $("billEnacted").onchange = loadBills;
+
+const metaReady = loadMeta().catch((error) => ($("metaLine").textContent = "Could not load: " + error.message));
+if (location.hash === "#coming-up") showTab("queues");
+if (location.hash === "#law") showTab("law");
+// Deep links: ?open=26-0333 opens an item, ?node=mnstat:383B.158 opens a statute, ordinance, session law or bill,
+// ?q=... runs a search, ?q=...&ask=1 asks, ?q=...&topic=1 charts the topic; #law and #coming-up open those tabs.
+const linked = new URLSearchParams(location.search);
+if (linked.get("open")) openMatter({ file: linked.get("open") });
+if (linked.get("node")) openNode(linked.get("node"));
+if (linked.get("law") && linked.get("anchor")) openLawText(linked.get("law"), linked.get("anchor"));
+if (linked.get("q")) { $("q").value = linked.get("q"); run(linked.get("ask") ? "ask" : linked.get("topic") ? "topic" : "search"); }
+</script>
+</body>
+</html>
