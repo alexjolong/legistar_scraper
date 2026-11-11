@@ -40,6 +40,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser("status", help="summarise what is in the bronze layer")
+    sub.add_parser("build", help="rebuild the silver graph tables (Parquet) from bronze")
+    sql = sub.add_parser("sql", help="run a SQL query against the silver layer with DuckDB")
+    sql.add_argument("query", help="SQL text; views are v_<vertex>, e_<edge>, t_<table>, vertices, edges")
+    sub.add_parser("graph-demo", help="load the graph into GraphFrames and run sample analytics (needs the spark extra)")
     return parser
 
 
@@ -89,6 +93,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         store = bronze.BronzeStore(args.data_dir, args.client)
         print(json.dumps(bronze.status(store), indent=2))
+        return 0
+    if args.command == "build":
+        from . import silver
+
+        print(json.dumps(silver.build(args.data_dir, args.client), indent=2))
+        return 0
+    if args.command == "sql":
+        from . import query
+
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        query.connect(args.data_dir, args.client).sql(args.query).show(max_rows=200, max_width=200)
+        return 0
+    if args.command == "graph-demo":
+        from . import graph
+
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        graph.demo(args.data_dir, args.client)
         return 0
     return 2
 
