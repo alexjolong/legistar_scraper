@@ -112,3 +112,29 @@ def test_rtf_notes_become_plain_text():
 
 def test_clean_normalises_odd_spaces():
     assert tx.clean("Convey surplus property\r\n\r\n\r\n\r\nnow ") == "Convey surplus property\n\nnow"
+
+
+def test_chunk_text_keeps_short_sections_whole():
+    assert tx.chunk_text(None) == [] and tx.chunk_text("  ") == []
+    assert tx.chunk_text("One paragraph.\n\nAnother.", max_chars=100) == ["One paragraph.\n\nAnother."]
+    slightly_over = "word " * 23  # 115 chars: within the 25% allowance
+    assert len(tx.chunk_text(slightly_over, max_chars=100)) == 1
+
+
+def test_chunk_text_splits_between_paragraphs_into_even_passages():
+    paragraphs = [f"Paragraph {i} " + "x" * 80 for i in range(10)]  # about 930 chars in all
+    chunks = tx.chunk_text("\n".join(paragraphs), max_chars=400)
+    assert len(chunks) == 3
+    assert all(len(chunk) <= 400 for chunk in chunks)
+    assert max(map(len, chunks)) - min(map(len, chunks)) < 200  # no orphaned tail
+    assert "\n".join(chunks).split("\n") == paragraphs  # nothing lost, nothing split mid-paragraph
+
+
+def test_chunk_text_breaks_a_giant_paragraph_at_sentences_then_words():
+    sentences = "WHEREAS, the county finds that " + "; and WHEREAS, the county further finds that ".join(["x" * 60] * 12)
+    chunks = tx.chunk_text(sentences, max_chars=300)
+    assert all(len(chunk) <= 300 for chunk in chunks) and len(chunks) >= 4
+    assert all(chunk.rstrip().endswith((";", "x")) for chunk in chunks)
+    unbroken = tx.chunk_text("y" * 700 + " " + "z" * 500, max_chars=300)
+    assert all(len(chunk) <= 300 for chunk in unbroken)
+    assert "".join(unbroken).replace("\n", "").replace(" ", "") == "y" * 700 + "z" * 500

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Ingest Hennepin County legislative records from the Legistar Web API for a RAG question answering system"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=2.8.0",
     "duckdb>=2.0.0",
     "httpx>=0.28.1",
     "pyarrow>=26.0.1",

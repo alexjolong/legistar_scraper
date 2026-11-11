@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 import time
+from datetime import date
 from pathlib import Path
 
 from . import bronze
@@ -44,7 +45,92 @@ def _build_parser() -> argparse.ArgumentParser:
     sql = sub.add_parser("sql", help="run a SQL query against the silver layer with DuckDB")
     sql.add_argument("query", help="SQL text; views are v_<vertex>, e_<edge>, t_<table>, vertices, edges")
     sub.add_parser("graph-demo", help="load the graph into GraphFrames and run sample analytics (needs the spark extra)")
+
+    index = sub.add_parser("index", help="rebuild the search index (text passages and embeddings) from silver")
+    index.add_argument("--full", action="store_true", help="re-embed every passage instead of only new or changed ones")
+
+    def retrieval_options(command: argparse.ArgumentParser) -> None:
+        command.add_argument("question", help="a question or topic, in plain language; file numbers are recognised")
+        command.add_argument("--top", type=int, default=8, help="how many matters to retrieve (default: 8)")
+        command.add_argument("--since", type=date.fromisoformat, metavar="YYYY-MM-DD", help="only matters acted on since this date")
+        command.add_argument("--department", help="only matters whose requesting department contains this text")
+        command.add_argument("--body", help="only matters that appeared before a body whose name contains this text")
+        command.add_argument("--type", dest="matter_type", help="only this matter type, e.g. Resolution")
+        command.add_argument("--status", help="only this status, e.g. Referred")
+
+    retrieval_options(sub.add_parser("search", help="find matters by meaning, keywords and file number"))
+    ask = sub.add_parser("ask", help="answer a question from the record, with citations")
+    retrieval_options(ask)
+    ask.add_argument("--provider", choices=["anthropic", "ollama"], help="which LLM answers (default: LEGISTAR_LLM_PROVIDER, else anthropic)")
+    ask.add_argument("--model", help="model name for that provider (default: claude-sonnet-5-5, or gemma3:12b for ollama)")
     return parser
+
+
+def _searcher(args: argparse.Namespace):
+    from . import config, search
+    from .embed import OllamaEmbedder
+
+    settings = config.settings()
+    return search.Searcher(args.data_dir, args.client, OllamaEmbedder(settings.embed_model, settings.ollama_host))
+
+
+def _retrieve(args: argparse.Namespace):
+    from .search import Filters
+
+    filters = Filters(args.since, args.department, args.body, args.matter_type, args.status)
+    return _searcher(args).search(args.question, top=args.top, filters=filters)
+
+
+def _source_line(number: int, hit) -> str:
+    last = hit.history[-1] if hit.history else None
+    where = f"; last: {last['date']} {last['body']}, {last['action'] or 'on agenda'}" if last else ""
+    queued = f"; queued for {', '.join(hit.awaiting)}" if hit.awaiting else ""
+    return (
+        f"[{number}] {hit.file_number} ({hit.status or 'no status'}{where}{queued})\n"
+        f"    {' '.join((hit.title or '').split())}\n    {hit.url}"
+    )
+
+
+def _search(args: argparse.Namespace) -> int:
+    hits = _retrieve(args)
+    if not hits:
+        print("No matching matters.")
+    for number, hit in enumerate(hits, start=1):
+        print(_source_line(number, hit))
+        facts = [hit.matter_type, hit.department, "matched by " + ", ".join(hit.matched_by) if hit.matched_by else None]
+        print("    " + " | ".join(f for f in facts if f))
+        if hit.passages and hit.passages[0].section != "title":
+            excerpt = " ".join(hit.passages[0].text.split())
+            print(f"    {hit.passages[0].section}: {excerpt[:240]}{'...' if len(excerpt) > 240 else ''}")
+        print()
+    return 0
+
+
+def _ask(args: argparse.Namespace) -> int:
+    from . import config, llm, rag
+
+    hits = _retrieve(args)
+    chat = llm.provider(config.settings(), args.provider, args.model)
+    prompt = rag.build_prompt(args.question, hits, chat, client=args.client)
+    logging.getLogger(__name__).debug("prompt:\n%s\n\n%s", prompt.system, prompt.user)
+    failure = None
+    try:
+        for text in chat.stream(prompt.system, prompt.user):
+            print(text, end="", flush=True)
+    except llm.LLMError as exc:
+        failure = exc
+    print("\n")
+    if prompt.sources:
+        print("Sources")
+        for number, hit in enumerate(prompt.sources, start=1):
+            print(_source_line(number, hit))
+    if prompt.dropped:
+        print(f"\n{prompt.dropped} lower-ranked sources were left out to fit the model's context window.")
+    if failure:
+        print(f"\nerror ({chat.model}, {chat.name}): {failure}", file=sys.stderr)
+        return 1
+    print(f"\nAnswered by {chat.model} ({chat.name}).")
+    return 0
 
 
 def _ingest(args: argparse.Namespace) -> int:
@@ -111,6 +197,24 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         graph.demo(args.data_dir, args.client)
         return 0
+    if args.command in ("index", "search", "ask"):
+        from .embed import EmbeddingError
+        from .llm import LLMError
+
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        try:
+            if args.command == "index":
+                from . import config, gold
+                from .embed import OllamaEmbedder
+
+                settings = config.settings()
+                embedder = OllamaEmbedder(settings.embed_model, settings.ollama_host)
+                print(json.dumps(gold.build(args.data_dir, args.client, embedder, full=args.full), indent=2))
+                return 0
+            return _search(args) if args.command == "search" else _ask(args)
+        except (EmbeddingError, LLMError, FileNotFoundError, RuntimeError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
     return 2
 
 

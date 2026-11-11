@@ -160,5 +160,59 @@ def base_file_number(file_number: str | None) -> str:
     return re.sub(r"(?:[RS]\d)+$", "", normalize_file_number(file_number))
 
 
+# --- chunking for the vector index ---------------------------------------------------
+_SENTENCE_END = re.compile(r"(?<=[.;:?!])\s+")
+
+
+def _units(text: str, max_chars: int) -> list[str]:
+    """Paragraphs, with any paragraph longer than ``max_chars`` broken at sentence
+    ends and, failing that, at word boundaries."""
+    units: list[str] = []
+    for paragraph in (p.strip() for p in re.split(r"\n+", text)):
+        if not paragraph:
+            continue
+        if len(paragraph) <= max_chars:
+            units.append(paragraph)
+            continue
+        for sentence in _SENTENCE_END.split(paragraph):
+            while len(sentence) > max_chars:
+                cut = sentence.rfind(" ", 0, max_chars)
+                cut = cut if cut > 0 else max_chars
+                units.append(sentence[:cut].strip())
+                sentence = sentence[cut:].strip()
+            if sentence:
+                units.append(sentence)
+    return units
+
+
+def chunk_text(text: str | None, max_chars: int = 2400) -> list[str]:
+    """Split ``text`` into passages of at most ``max_chars``, breaking between
+    paragraphs and keeping the passages about the same size.
+
+    Text up to 25% over the limit stays whole: most resolution and background
+    sections fit in one passage, and a short orphaned tail retrieves badly.
+    """
+    text = clean(text)
+    if not text:
+        return []
+    if len(text) <= max_chars * 1.25:
+        return [text]
+    units = _units(text, max_chars)
+    total = sum(len(unit) for unit in units) + len(units) - 1
+    target = total / -(-total // max_chars)  # even split over the fewest chunks
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    for unit in units:
+        if current and (size + 1 + len(unit) > max_chars or size >= target):
+            chunks.append("\n".join(current))
+            current, size = [], 0
+        size += len(unit) + (1 if current else 0)
+        current.append(unit)
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
 def slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
