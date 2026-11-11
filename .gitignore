@@ -12,3 +12,6 @@ data/
 
 # Secrets
 .env
+
+# Local
+.vscode
