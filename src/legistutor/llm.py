@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Iterator
 from typing import Protocol
 
@@ -54,6 +55,23 @@ class OllamaChat:
         self._http = httpx.Client(base_url=host, timeout=httpx.Timeout(600.0, connect=10.0), transport=transport)
 
     def stream(self, system: str, user: str) -> Iterator[str]:
+        """Text as it is generated. If Ollama's model runner dies before producing anything
+        (it does, now and then, when memory is tight while another model is loading), Ollama
+        starts a new one on the next request, so the request is made once more."""
+        for attempt in (1, 2):
+            produced = False
+            try:
+                for text in self._stream_once(system, user):
+                    produced = True
+                    yield text
+                return
+            except LLMError as exc:
+                if attempt == 2 or produced or "runner" not in str(exc):
+                    raise
+                log.warning("Ollama's model runner stopped; trying once more (%s)", exc)
+                time.sleep(2)
+
+    def _stream_once(self, system: str, user: str) -> Iterator[str]:
         payload = {
             "model": self.model,
             "stream": True,

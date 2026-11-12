@@ -232,6 +232,19 @@ class Searcher:
             hit.matched_by = sorted(signals.get(parent, ()))
         return [hits[parent] for parent in parents if parent in hits]
 
+    def best_similarity(self, question: str) -> tuple[float, float]:
+        """The closest passage to the question in the record, and in the law. The two
+        numbers come from one question in one vector space, so unlike scores from
+        different questions they can be compared: the larger says where the better match is."""
+        vector = self._vector(question)
+
+        def best(table: str) -> float:
+            return self.con.execute(
+                f"select max(array_cosine_similarity(embedding, ?::FLOAT[{self.dim}])) from {table}", [vector]
+            ).fetchall()[0][0] or 0.0
+
+        return best("chunk"), (best("law_chunk") if self.law else 0.0)
+
     def law_cards(self, ids: list[str]) -> list[LawHit]:
         """Statute sections and ordinances by vertex id, with how many matters cite each."""
         if not ids:

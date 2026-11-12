@@ -297,8 +297,12 @@ def test_search_finds_law_apart_from_the_record(app):
     assert (top.id, top.label, top.title, top.cited_by) == ("mnstat:383B.158", "Minn. Stat. § 383B.158", "DESIGN-BUILD CONTRACTS", 2)
     assert top.passages[0].label == "Minn. Stat. § 383B.158, subd. 2" and top.passages[0].source == "mnstat:383B.158#2"
     assert app.search({"q": "26-0006"})["law"] == []  # a file number asks for an item
-    organics = app.search({"q": "organics food scraps yard waste"})["law"][0]
+    found = app.search({"q": "organics food scraps yard waste"})
+    organics = found["law"][0]
     assert (organics.kind, organics.label, organics.cited_by) == ("ordinance", "Ordinance 13", 1)
+    # whichever holds the closer passage leads: here only the ordinance speaks of food scraps
+    assert found["lead"] == "law" and found["closest"]["law"] > found["closest"]["record"]
+    assert app.search({"q": "emergency shelter beds for people experiencing homelessness this winter"})["lead"] == "record"
 
 
 def test_ask_adds_law_only_to_questions_about_the_law(app):
@@ -312,7 +316,8 @@ def test_ask_adds_law_only_to_questions_about_the_law(app):
     assert list(app.ask({"q": "what does the law say about design-build?", "top": "2"}))[-1][1]["unsupported"] == [
         "cites source [9], which does not exist"
     ]
-    assert list(app.ask({"q": "what happened to the design-build contract", "top": "2"}))[0][1]["law"] == []
+    # no word about law, and the record matches better than any statute: the model gets the record alone
+    assert list(app.ask({"q": "emergency shelter beds for people experiencing homelessness", "top": "2"}))[0][1]["law"] == []
     assert rag.asks_about_law("Is that allowed by statute?") and not rag.asks_about_law("who authorized the paving agreement")
 
 

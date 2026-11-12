@@ -98,8 +98,14 @@
   .pill.alert { background: var(--warn-bg); color: var(--warn-ink); border-color: transparent; }
   ins { background: var(--ins-bg); text-decoration: underline; text-decoration-thickness: 1px; }
   del { color: var(--del-ink); text-decoration: line-through; }
-  .subd { border-top: 1px solid var(--grid); padding: 10px 0 4px; margin-top: 8px; }
+  .subd { border-top: 1px solid var(--grid); padding: 8px 0 4px; margin-top: 0; }
+  .subd > summary { color: var(--ink); font-size: 14px; }
+  .subd .preview { color: var(--muted); margin-left: 6px; font-size: 13px; }
+  .subd[open] .preview { display: none; }
+  .reading p { margin: 0 0 8px; } .reading ul { margin: 0 0 8px; padding-left: 22px; }
+  .cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   .subd.focus { background: var(--wash); border-left: 3px solid var(--series-1); padding-left: 10px; }
+  form.ask input[type=text] { min-width: 0; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
   code { background: var(--wash); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
   .hidden { display: none !important; }
@@ -153,7 +159,7 @@
     </div>
     <div class="card hidden" id="lawHitsCard">
       <h2 id="lawHitsTitle">Related law</h2>
-      <div class="sub">Statute sections and county ordinances whose text matches, ranked apart from the record.</div>
+      <div class="sub" id="lawHitsSub">Statute sections and county ordinances whose text matches, ranked apart from the record.</div>
       <div id="lawHits"></div>
     </div>
   </section>
@@ -340,7 +346,7 @@ function run(mode) {
   }
   $("hits").style.opacity = 0.5;  // hold the previous results while the new ones load
   if (mode === "search") {
-    api("/api/search", query).then((data) => { renderHits(data.hits, "Results"); renderLawHits(data.law, null); }).catch(showError);
+    api("/api/search", query).then((data) => { renderHits(data.hits, "Results"); renderLawHits(data.law, null, data.lead); }).catch(showError);
     return;
   }
   const answer = $("answer"), foot = $("answerFoot");
@@ -399,9 +405,10 @@ function renderAnswer(container, text) {
 }
 function inline(text) {
   const parts = [];
-  for (const piece of text.split(/(\*\*[^*]+\*\*|\[\d+(?:\s*,\s*\d+)*\])/)) {
+  for (const piece of text.split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|\[\d+(?:\s*,\s*\d+)*\])/)) {
     if (!piece) continue;
     if (piece.startsWith("**")) parts.push(el("strong", {}, piece.slice(2, -2)));
+    else if (piece.startsWith("*")) parts.push(el("em", {}, piece.slice(1, -1)));
     else if (/^\[\d/.test(piece)) {
       for (const n of piece.slice(1, -1).split(",").map((s) => s.trim())) {
         parts.push(el("button", { class: "cite", type: "button", title: `Show source ${n}`, onclick: () => flashHit(n) }, n));
@@ -747,9 +754,15 @@ const setKids = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).f
 const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
 // offset is the number of record sources above, when the law is numbered as sources of an answer.
-function renderLawHits(law, offset) {
+function renderLawHits(law, offset, lead) {
   $("lawHitsCard").classList.toggle("hidden", !law || !law.length);
-  setKids($("hitsNote"), law && law.length && offset == null
+  // Whichever matches the question better goes first: the record's results, or the law's.
+  const first = lead === "law" && law && law.length && offset == null;
+  if (first) $("hitsCard").before($("lawHitsCard")); else $("hitsCard").after($("lawHitsCard"));
+  $("lawHitsSub").textContent = first
+    ? "The law matches this question more closely than the record does, so it is shown first. The record's results follow."
+    : "Statute sections and county ordinances whose text matches, ranked apart from the record.";
+  setKids($("hitsNote"), law && law.length && offset == null && !first
     ? el("button", { class: "filelink", type: "button", style: "font-weight:400", onclick: () => $("lawHitsCard").scrollIntoView({ behavior: "smooth", block: "start" }) },
         `${plural(law.length, "statute section")} or ordinance${law.length === 1 ? "" : "s"} also match: see Related law below`) : null);
   if (!law || !law.length) return;
@@ -825,6 +838,64 @@ function changesTable(changes, withStatute) {
         c.ordinances ? plural(c.ordinances, "ordinance") : null].filter(Boolean).join("; ") || el("span", { class: "meta" }, "not cited")) : null)));
 }
 
+
+// --- the model reading one statute section, chapter or ordinance -----------------------
+// A summary is written once and kept; a question is answered from that text alone. The
+// server says what it gave the model to read, which is not always the whole thing.
+let lawStream = null;
+function readingFoot(info, again) {
+  const when = info.written_utc ? " on " + new Date(info.written_utc).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+  return [
+    info.basis && info.basis !== "whole" ? el("div", { class: "warn" }, info.coverage) : null,
+    info.unsupported && info.unsupported.length ? el("div", { class: "warn" }, "Check against the text. It names places that are not in what it read:",
+      el("ul", {}, info.unsupported.map((item) => el("li", {}, item)))) : null,
+    info.current === false ? el("div", { class: "warn" }, "The text or the model has changed since this was written.") : null,
+    el("div", { class: "note" }, `Written by ${info.model}${when}` + (info.seconds ? ` in ${info.seconds} s` : "") +
+      (info.basis === "whole" ? ", from all of the text on this page. " : ". "),
+      again ? el("button", { class: "btn small", type: "button", onclick: again }, "Write again") : null)];
+}
+function readerCard(node, noun) {
+  if (lawStream) { lawStream.close(); lawStream = null; }
+  const summaryBox = el("div", { class: "reading" }), summaryFoot = el("div", {});
+  const answerBox = el("div", { class: "reading" }), answerFoot = el("div", {});
+  const input = el("input", { type: "text", placeholder: `Ask about this ${noun}, for example: who does it apply to?`, "aria-label": `Question about this ${noun}`, autocomplete: "off" });
+  const run = (question, fresh) => {
+    if (lawStream) lawStream.close();
+    const box = question ? answerBox : summaryBox, foot = question ? answerFoot : summaryFoot;
+    let text = "", scope = {};
+    setKids(box, el("p", { class: "note" }, `${META.chat_model} is reading the ${noun}… a long one can take a minute.`));
+    setKids(foot);
+    const stream = lawStream = new EventSource("/api/law_ask?" + new URLSearchParams(Object.entries({ id: node.id, q: question, fresh: fresh ? "1" : "" }).filter(([, v]) => v)));
+    const finish = () => { stream.close(); if (lawStream === stream) lawStream = null; };
+    stream.addEventListener("scope", (event) => { scope = JSON.parse(event.data); });
+    stream.addEventListener("token", (event) => { text += JSON.parse(event.data).text; renderAnswer(box, text); });
+    stream.addEventListener("done", (event) => {
+      const data = JSON.parse(event.data);
+      renderAnswer(box, text);
+      setKids(foot, readingFoot({ ...data, coverage: scope.coverage, basis: scope.basis }, question ? null : () => run("", true)));
+      finish();
+    });
+    stream.addEventListener("error", (event) => {
+      setKids(box);
+      setKids(foot, el("div", { class: "error" }, event.data ? JSON.parse(event.data).message : "The connection to the local server was lost."));
+      finish();
+    });
+  };
+  if (node.summary) {
+    renderAnswer(summaryBox, node.summary.text);
+    setKids(summaryFoot, readingFoot(node.summary, () => run("", true)));
+  } else {
+    setKids(summaryBox, el("button", { class: "btn", type: "button", onclick: () => run("", false) }, `Summarise with ${META.chat_model}`));
+  }
+  return el("div", { class: "card" },
+    el("h2", {}, "Summary and questions"),
+    summaryBox, summaryFoot,
+    el("form", { class: "ask", style: "margin-top:12px", onsubmit: (event) => { event.preventDefault(); if (input.value.trim()) run(input.value.trim(), false); } },
+      input, el("button", { class: "btn", type: "submit" }, "Ask")),
+    answerBox, answerFoot,
+    el("div", { class: "note" }, `A model running on this computer writes these from the text of this ${noun} and nothing else. It can misread, and it does not see other law that may bear on it. ` +
+      "What the law means for the county is for the County Attorney's Office."));
+}
 function renderStatute(node) {
   const fetched = node.fetched;
   const body = [el("div", { class: "card" },
@@ -839,6 +910,7 @@ function renderStatute(node) {
     el("div", { class: "meta" }, outLink(node.url, "Read it at the Revisor's office"), fetched ? ". The Revisor's publication is the official text; this copy is for finding and linking." : null))];
   if (node.kind === "chapter") {
     const sections = node.sections || [];
+    if (fetched && sections.length) body.push(readerCard(node, "chapter"));
     const notable = sections.filter((s) => s.matters || s.changes);
     const row = (s) => el("tr", {}, el("td", { style: "white-space:nowrap" }, nodeLink(s.id, s.number)), el("td", {}, s.headnote || "", " ", s.status == null ? el("span", { class: "pill alert" }, "cited, but no such section") : statusPill(s.status)),
       el("td", { class: "num" }, s.matters ? String(s.matters) : ""), el("td", { class: "num" }, s.changes ? String(s.changes) : ""));
@@ -851,14 +923,30 @@ function renderStatute(node) {
   } else {
     if (node.changes && node.changes.length) body.push(el("div", { class: "card" },
       el("h2", {}, `Changed by the legislature since 2023 (${node.changes.length})`), changesTable(node.changes, false)));
-    if (fetched) body.push(el("div", { class: "card" },
-      el("h2", {}, "Text"),
-      node.text ? el("div", { class: "text" }, node.text) : null,
-      (node.subdivisions || []).map((d) => el("div", { class: "subd" + (node.focus === d.id ? " focus" : ""), id: node.focus === d.id ? "focusSubd" : null },
-        el("div", {}, el("b", {}, `Subd. ${d.number}. `, d.headnote || ""), " ", statusPill(d.status), " ",
-          d.matters ? el("span", { class: "pill" }, `cited by ${plural(d.matters, "matter")}`) : null),
-        el("div", { class: "text" }, d.text || ""))),
-      node.history ? el("div", { class: "note" }, "History: " + node.history) : null));
+    if (fetched) {
+      const subdivisions = node.subdivisions || [];
+      // Closed by default: a long section is easier to scan as a list of headnotes. The
+      // subdivision the reader came for is open, and so is a section's only subdivision.
+      const blocks = subdivisions.map((d) => el("details", { class: "subd" + (node.focus === d.id ? " focus" : ""), id: node.focus === d.id ? "focusSubd" : null,
+          open: node.focus === d.id || subdivisions.length === 1 ? "" : null },
+        el("summary", {}, el("b", {}, `Subd. ${d.number}. `, d.headnote || ""), " ", statusPill(d.status), " ",
+          d.matters ? el("span", { class: "pill" }, `cited by ${plural(d.matters, "matter")}`) : null,
+          el("span", { class: "preview" }, clip(d.text, d.headnote ? 90 : 130))),
+        el("div", { class: "text" }, d.text || "")));
+      const toggle = el("button", { class: "btn small", type: "button", onclick: () => {
+        const open = blocks.some((block) => !block.open);
+        blocks.forEach((block) => { block.open = open; });
+        toggle.textContent = open ? "Collapse all" : "Expand all";
+      } }, "Expand all");
+      if (node.text || blocks.length) {
+        body.push(readerCard(node, "section"));
+        body.push(el("div", { class: "card" },
+          el("div", { class: "cardhead" }, el("h2", {}, blocks.length ? `Text (${plural(blocks.length, "subdivision")})` : "Text"), blocks.length > 1 ? toggle : null),
+          node.text ? el("div", { class: "text" }, node.text) : null,
+          blocks,
+          node.history ? el("div", { class: "note" }, "History: " + node.history) : null));
+      }
+    }
     body.push(mattersCard(node, "Items citing this section"));
     const links = [["Ordinances citing it", node.ordinances], ["Refers to", node.refers_to], ["Referred to by", node.referred_by]].filter(([, list]) => list && list.length);
     if (links.length) body.push(el("div", { class: "card" }, el("h2", {}, "Links in the law"),
@@ -895,6 +983,7 @@ function renderOrdinance(node) {
         : el("div", { class: "warn" }, "The record cites this ordinance number, but the county's ordinance pages list no ordinance with it."),
       node.notice ? el("div", { class: "warn" }, node.notice) : null,
       el("div", { class: "meta" }, outLink(node.url, "Read it on the county's website"), node.pdf_url ? [" · ", outLink(node.pdf_url, "PDF copy")] : null)),
+    node.sections && node.sections.length ? readerCard(node, "ordinance") : null,
     node.statutes && node.statutes.length ? el("div", { class: "card" },
       el("h2", {}, `Statutes it cites (${node.statutes.length})`),
       el("table", {}, el("tr", {}, el("th", {}, "Statute"), el("th", {}, "Headnote"), el("th", {}, ""), el("th", { class: "num" }, "Changes since 2023")),

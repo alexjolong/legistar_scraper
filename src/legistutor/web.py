@@ -12,6 +12,8 @@ is a single file with no external assets; this module is its JSON API:
 * ``/api/topic``    matters containing every word of a query, by quarter and department
 * ``/api/changes``  statutes the record relies on that a session changed, and citations that need a look
 * ``/api/law_text`` one section of a session law, with struck and inserted text marked
+* ``/api/law_ask``  a summary of one statute section, chapter or ordinance, or an answer to a
+  question about it, written by the chat model from that text alone and streamed like ``/api/ask``
 * ``/api/ordinances``, ``/api/bills``   the county's ordinances; state bills by words in their title
 
 The standard library's HTTP server is enough for one person on one machine, and
@@ -36,7 +38,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import config, gold, llm, rag
+from . import config, gold, lawnotes, llm, rag
 from .embed import EmbeddingError, OllamaEmbedder
 from .law import chapter_sort_key
 from .search import Filters, Hit, Searcher
@@ -49,6 +51,11 @@ NODE_MATTERS = 40  # matters listed for a department, statute or body
 STALE_DAYS = 180  # sent to a body longer ago than this and never heard: a leftover, not a backlog
 TOPIC_DEPARTMENTS = 5  # departments given their own colour in the topic chart; the rest fold into "Other"
 LAW_SOURCES = 3  # statute sections or ordinances added to a question about the law
+# The law's results are shown first when its best passage is closer to the question than
+# the record's best by more than this. On fifteen trial questions the gap was -0.27 to -0.04
+# for questions about what the board did and +0.09 to +0.23 for questions about what the law
+# says, so the margin sits between; it should be set again from the evaluation questions.
+LAW_LEAD_MARGIN = 0.03
 CHANGE_ACTIONS = ("Amended", "New", "Repealed")  # Table 2 actions shown by name; the rest are "Other"
 BILL_LIMIT = 200
 _LAST_ACTION = "coalesce((select max(o.date) from e_on_agenda o where o.src = m.id), m.intro_date)"
@@ -86,11 +93,20 @@ def _top(params: dict[str, str]) -> int:
 
 
 class App:
-    def __init__(self, searcher: Searcher, chat: Callable[[], llm.ChatProvider], *, client: str, embed_model: str) -> None:
+    def __init__(
+        self,
+        searcher: Searcher,
+        chat: Callable[[], llm.ChatProvider],
+        *,
+        client: str,
+        embed_model: str,
+        notes_dir: Path | None = None,
+    ) -> None:
         self.searcher = searcher
         self.chat = chat
         self.client = client
         self.embed_model = embed_model
+        self.notes_dir = notes_dir  # where the model's summaries of the law are kept; None keeps none
         # One DuckDB connection is shared by the request threads.
         self.lock = threading.Lock()
         views = {row[0] for row in searcher.con.sql("select table_name from information_schema.tables").fetchall()}
@@ -159,7 +175,9 @@ class App:
         with self.lock:
             hits = self.searcher.search(question, top=_top(params), filters=_filters(params))
             law = self.searcher.search_law(question, top=LAW_SOURCES + 1)
-        return {"hits": hits, "law": law}
+            record_best, law_best = self.searcher.best_similarity(question) if law else (0.0, 0.0)
+        lead = "law" if law and law_best - record_best > LAW_LEAD_MARGIN else "record"
+        return {"hits": hits, "law": law, "lead": lead, "closest": {"record": round(record_best, 3), "law": round(law_best, 3)}}
 
     def ask(self, params: dict[str, str]) -> Iterator[tuple[str, Any]]:
         """Events for one question: ``sources``, then ``token`` repeatedly, then
@@ -169,7 +187,9 @@ class App:
         try:
             found = self.search(params)
             hits = found["hits"]
-            law = found.get("law", [])[:LAW_SOURCES] if rag.asks_about_law(question) or params.get("law") == "1" else []
+            # Law text goes to the model when the question names the law, or matches the law better than the record.
+            wants_law = rag.asks_about_law(question) or found.get("lead") == "law" or params.get("law") == "1"
+            law = found.get("law", [])[:LAW_SOURCES] if wants_law else []
             chat = self.chat()
             prompt = rag.build_prompt(question, hits, chat, client=self.client, law=law)
             yield "sources", {"hits": prompt.sources, "law": prompt.law, "dropped": prompt.dropped}
@@ -282,7 +302,96 @@ class App:
         }.get(kind)
         if detail:
             result.update(detail(node))
+            if kind in ("statute", "ordinance"):
+                result["summary"] = self._kept_summary(node)
         return result
+
+    # --- the model reading one piece of law ---------------------------------------------
+
+    def _reading(self, node: str, question: str):
+        """What the model would be given to summarise ``node`` or to answer ``question`` about it."""
+        try:
+            scope = lawnotes.load(self._rows, node)
+        except IndexError:
+            raise lawnotes.NothingToRead(f"No statute or ordinance {node!r}") from None
+        chat = self.chat()
+        jurisdiction = rag.JURISDICTIONS.get(self.client, self.client)
+        room = lawnotes.budget(chat.context_chars, question, jurisdiction=jurisdiction)
+        scores = self._closeness(scope, question) if question and scope.chars > room and self.searcher.law else None
+        selection = lawnotes.select(scope, room, scores, summary=not question)
+        system, user = lawnotes.build_prompt(scope, selection, question, jurisdiction=jurisdiction)
+        return scope, selection, chat, system, user
+
+    def _closeness(self, scope: lawnotes.Scope, question: str) -> dict[str, float]:
+        """How close each part of a long text is to the question, from the search index."""
+        by_kind = {
+            "section": ("source", "parent = ?", scope.id),
+            "chapter": ("parent", "chapter = ?", scope.id.removeprefix("mnstat:")),
+            "ordinance": ("coalesce(heading, '')", "source = ?", scope.id),
+        }
+        key, where, value = by_kind[scope.kind]
+        with self.lock:
+            vector = self.searcher._vector(question)
+            rows = self.searcher.con.execute(
+                f"""select {key}, max(array_cosine_similarity(embedding, ?::FLOAT[{self.searcher.dim}]))
+                    from law_chunk where {where} group by 1""",
+                [vector, value],
+            ).fetchall()
+        return dict(rows)
+
+    def _kept_summary(self, node: str) -> dict[str, Any] | None:
+        """The summary on disk, and whether it was written by the current model from the current text."""
+        kept = lawnotes.read_summary(self.notes_dir, node)
+        if not kept:
+            return None
+        try:
+            _, _, chat, system, user = self._reading(node, "")
+        except lawnotes.NothingToRead:
+            return None
+        current = kept.get("model") == chat.model and kept.get("fingerprint") == lawnotes.fingerprint(system, user)
+        return {**{k: kept.get(k) for k in ("text", "model", "written_utc", "coverage", "basis", "unsupported")}, "current": current}
+
+    def law_ask(self, params: dict[str, str]) -> Iterator[tuple[str, Any]]:
+        """Events for a summary (no ``q``) or an answer: ``scope`` saying what was read, then
+        ``token`` repeatedly, then ``done`` (or ``error``). A summary already on disk from the
+        same model and text is sent back as it is, unless ``fresh=1``."""
+        node, question = params.get("id") or "", (params.get("q") or "").strip()
+        started = time.monotonic()
+        try:
+            scope, selection, chat, system, user = self._reading(node, question)
+            mark = lawnotes.fingerprint(system, user)
+            yield "scope", {"id": scope.id, "label": scope.label, "kind": scope.kind, "basis": selection.basis, "coverage": selection.coverage}
+            kept = None if question or params.get("fresh") == "1" else lawnotes.read_summary(self.notes_dir, scope.id)
+            if kept and kept.get("model") == chat.model and kept.get("fingerprint") == mark:
+                yield "token", {"text": kept["text"]}
+                yield "done", {"model": chat.model, "kept": True, "written_utc": kept["written_utc"], "unsupported": kept.get("unsupported", [])}
+                return
+            answer: list[str] = []
+            for text in chat.stream(system, user):
+                answer.append(text)
+                yield "token", {"text": text}
+            full = "".join(answer).strip()
+            unsupported = lawnotes.unsupported_references(full, scope, selection)
+            if full and not question:
+                lawnotes.write_summary(
+                    self.notes_dir, scope.id, model=chat.model, fingerprint=mark, text=full,
+                    coverage=selection.coverage, basis=selection.basis, unsupported=unsupported,
+                )  # fmt: skip
+            yield "done", {"model": chat.model, "kept": False, "seconds": round(time.monotonic() - started, 1), "unsupported": unsupported}
+        except lawnotes.NothingToRead as exc:
+            yield "error", {"message": str(exc)}
+        except (llm.LLMError, EmbeddingError) as exc:
+            yield "error", {"message": str(exc)}
+
+    def most_cited_sections(self, limit: int) -> list[tuple[str, str, int]]:
+        """Statute sections in force, by how many matters cite them: the ones worth summarising ahead of time."""
+        return self._rows(
+            """select s.id, v.label, count(distinct c.src) as matters
+               from e_cites c join v_statute s on s.id = c.dst join vertices v on v.id = s.id
+               where s.kind = 'section' and s.status = 'in force'
+               group by all order by matters desc, s.id limit ?""",
+            [limit],
+        )
 
     # --- the law: statutes, session laws, ordinances, bills -------------------------
 
@@ -718,6 +827,8 @@ def _handler(app: App) -> type[BaseHTTPRequestHandler]:
                     self._send(200, "text/html; charset=utf-8", page.read_bytes())
                 elif url.path == "/api/ask":
                     self._stream(app.ask(params))
+                elif url.path == "/api/law_ask":
+                    self._stream(app.law_ask(params))
                 elif url.path in routes:
                     self._json(200, routes[url.path](params))
                 else:
@@ -757,10 +868,24 @@ class _Server(ThreadingHTTPServer):
     allow_reuse_address = os.name != "nt"
 
 
-def serve(data_dir: Path, client: str, *, port: int = 8765, open_browser: bool = True) -> None:
+def notes_dir(data_dir: Path, client: str) -> Path:
+    return gold.gold_root(Path(data_dir), client) / "law_summaries"
+
+
+def application(data_dir: Path, client: str) -> App:
     settings = config.settings()
     searcher = Searcher(data_dir, client, OllamaEmbedder(settings.embed_model, settings.ollama_host))
-    app = App(searcher, lambda: llm.chat_model(config.settings()), client=client, embed_model=settings.embed_model)
+    return App(
+        searcher,
+        lambda: llm.chat_model(config.settings()),
+        client=client,
+        embed_model=settings.embed_model,
+        notes_dir=notes_dir(data_dir, client),
+    )
+
+
+def serve(data_dir: Path, client: str, *, port: int = 8765, open_browser: bool = True) -> None:
+    app = application(data_dir, client)
     server = make_server(app, port)
     address = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"Serving {gold.chunks_path(data_dir, client)} at {address}  (Ctrl+C to stop)")

@@ -1,6 +1,55 @@
 # Plan: bringing statutes into legistutor
 
-Written 2026-11-11. Status: proposal, nothing built.
+Written 2026-11-11 as a proposal. The status below was added the same day, after the
+decisions came back; the proposal follows unchanged, so where the two differ the
+status is right. How to use what was built is in the [README](../README.md#the-law).
+
+## Status
+
+Decisions: bills come from Open States (Plural Policy) for everything it offers, the
+Revisor's site for the rest, the county's site for ordinances. No message is sent to
+the Revisor's office or anyone else. Changes are read from the 2023 session on, with
+History lines dating older ones. Readers are a few colleagues, so the change list is
+a tab in the web page; no digest.
+
+| Phase | State |
+|---|---|
+| 0. Settle unknowns | Done. Findings below. |
+| 1. Statute text | Done: 104 chapters, sections and subdivisions as vertices, cross-references, subdivision and session-law citations from matter text, statute text in search and in answers, statute view in the page. |
+| 2. Enacted-change watch | Done for what is published: Table 2 for 2023 to 2026, session laws with bill and presentment date, the amending text with struck and inserted words, a "what changed" list ranked by reliance, and a "citations to check" list. `refresh` re-reads the current year. |
+| 3. Pending bills | Partly. Bills, actions, companions and "became law" are in the graph and searchable by title. Not done: which statutes a pending bill would amend, and matching bills to the county's platform. Both wait for the 2027 session to have bills to test on. |
+| 4. Ordinances | Done: 28 pages, all HTML; linked to the matters and statutes they cite. |
+| 5. Platform linkage | Not started. |
+
+What phase 0 found:
+
+- Table 2 filters with `search_term=`, not `full=` (`?search_term=383B&year=2026`
+  returns the nine 2026 rows for chapter 383B). It was simpler to read whole sessions
+  (40 pages for four years) and filter locally, which also keeps the statewide table.
+- Open States carries no statute citations for a bill, only its short title, subjects,
+  authors, actions, companion and links to the Revisor's text. One bulk archive per
+  session makes the API almost unnecessary outside a session. The free tier's rate
+  limit is not stated in the responses; the client spaces API calls seven seconds apart.
+- Ordinances cite far more chapters than the record does: adding theirs took the
+  watched set from 53 chapters to 104.
+- The online statutes are now the 2026 edition, so this year's changes are already in
+  the text that was fetched.
+
+What the first run turned up in the record: four items cite a section that is
+repealed, renumbered or does not exist, and 46 changes in the 2026 session touched
+sections the record or an ordinance cites.
+
+Next, in the order I would take them:
+
+1. Your evaluation questions, extended with a few about the law, before more is built
+   on the search.
+2. When the 2027 session opens (January 12): fetch bill text from the Revisor for bills
+   that name the county or fall under watched subjects, read the "amending Minnesota
+   Statutes ..., section ..." clause of each title, and add `would_change` edges. That
+   turns the Law tab's bill list into "bills that would change law the record rests on".
+3. Platform linkage (phase 5), which needs those edges and the similarity index.
+4. Text comparison between statute editions. The amending law's own text already shows
+   each change, so this matters only for changes made by Revisor's instruction.
 
 ## Recommendation
 

@@ -5,20 +5,26 @@ actions, votes) from the public [Legistar Web API](https://webapi.legistar.com/H
 so it can be searched and questioned with a retrieval-augmented LLM.
 
 The data comes from Legistar, the legislative management system the county uses
-(a Granicus product). This project is not affiliated with Granicus. Next planned source: 
-Minnesota Statutes and session laws, see [docs/statutes-plan.md](docs/statutes-plan.md).
+(a Granicus product). This project is not affiliated with Granicus.
+
+It also collects the law the record rests on: the chapters of Minnesota Statutes that
+the county's items and ordinances cite, what each legislative session changed in them,
+the session laws and bills behind those changes, and the county's own ordinances. See
+[The law](#the-law).
 
 Status: proof of concept, working end to end on one machine: ingestion (bronze), the
 graph (silver), the search index (gold), hybrid search, cited answers from a local
 model, and a local web page with graph views.
 
 ```
-Legistar API --ingest--> bronze (raw JSON) --build--> silver (graph as Parquet)
-                                                        |-- DuckDB       interactive lookups
-                                                        |-- GraphFrames  batch graph analytics
-                                                        '--index--> gold (passages + embeddings)
-                                                                      '-- search / ask / serve (web page)
-refresh = ingest + build + index
+Legistar API ----ingest-----> bronze (raw JSON) --.
+Revisor of Statutes --.                            |
+Open States (bills) --+-ingest-law-> bronze -------+--build--> silver (one graph, as Parquet)
+county ordinance pages'    (pages and archives as fetched)        |-- DuckDB       interactive lookups
+                                                                  |-- GraphFrames  batch graph analytics
+                                                                  '--index--> gold (passages + embeddings)
+                                                                                '-- search / ask / serve (web page)
+refresh = ingest + ingest-law + build + index
 ```
 
 ## Quick start
@@ -35,6 +41,7 @@ uv run legistutor sql "select o.date, o.body_name, o.action from e_on_agenda o j
 uv run legistutor index               # silver -> gold search index; needs Ollama (see below)
 uv run legistutor search "embedded social workers in police departments"
 uv run legistutor ask "Where does 26-0333 stand, and what was it about?"
+uv run legistutor ingest-law          # statutes, session laws, bills, ordinances; then build and index again
 uv run legistutor serve               # the web page, at http://127.0.0.1:8765/
 uv run legistutor refresh             # later: fetch what changed, rebuild graph and index
 uv run pytest
@@ -86,6 +93,60 @@ Things worth knowing about this tenant:
   item. The votes endpoint returns that shared vote for each consent item.
 - Collections return at most 1000 rows per request; page with `$top` and `$skip`.
 
+## The law
+
+`legistutor ingest-law` adds three sources beside Legistar. Each lands in its own
+bronze folder as fetched, and builds its own silver graph; the query layer joins them
+to the record by id (a matter's citation of `mnstat:383B.158` meets the statute's own
+row). Nothing in the state-law code knows about a county, so it can be pointed at
+other chapters or lifted out.
+
+| Source | What is taken | How |
+|---|---|---|
+| [Revisor of Statutes](https://www.revisor.mn.gov/statutes/) | Whole chapters of Minnesota Statutes (sections, subdivisions, History lines); the table of statutes each session created, amended or repealed; each session's list of laws; the text of the session laws that changed a watched chapter | Web pages, one request per second. The site has no API. `robots.txt` allows these pages and disallows bill *search results*, which are never requested |
+| [Open States](https://docs.openstates.org/api-v3/) (run by Plural Policy) | Every bill of the sessions since 2023: title, subjects, authors, actions, companion | One bulk archive per session, plus the API for bills changed since. Needs `PLURAL_POLICY_API_KEY` in the environment or in `.env` |
+| [County ordinance pages](https://www.hennepincounty.gov/government/about/ordinances) | The 28 ordinances and tax resolutions the county publishes, as text | Web pages; all are HTML, none needed PDF parsing |
+
+**Which chapters.** Not all of Minnesota Statutes: the chapters that an item in the
+record or a county ordinance cites (104 today), plus any you name with
+`--chapters 13 471`. A chapter stays watched once fetched. Changes are read from the
+2023 session on (`--since-year`); older changes are still dated by each section's
+History line.
+
+**What it is for.**
+
+- *What changed under the record.* After each session the state publishes exactly which
+  sections it touched. Joined to the graph, that is a list ranked by reliance: how many
+  matters and ordinances cite each changed section, with the session law's own text
+  showing struck and inserted words, and its effective date where the section states one.
+- *Citations to check.* Items that cite a section which is repealed, renumbered, or not
+  in the statutes at all.
+- *Law as context.* A statute or ordinance opens with its text, the items citing it
+  (down to the subdivision where the citation is that precise), and its cross-references.
+  Statute and ordinance text is searchable, and is given to the model for questions
+  about the law.
+- *Bills.* Searchable by words in the title, with their actions and, for those that
+  passed, the session law they became.
+
+**What it does not do.** It does not say what a change means for the county; that is
+legal judgment, and the page says so. It does not yet say which statutes a *pending*
+bill would amend: Open States does not carry that, so it will come from the bill text
+on the Revisor's site once a session is under way (the 2027 session opens in January).
+The copy of the statutes here is for finding and linking; the Revisor's publication is
+the official text.
+
+```
+uv run legistutor ingest-law                  # everything; a few minutes the first time
+uv run legistutor ingest-law --chapters 13    # also watch chapter 13
+uv run legistutor ingest-law --skip bills     # parts: statutes changes bills ordinances
+uv run legistutor summarize-law --top 130     # optional: model summaries of the most-cited sections, ahead of time
+uv run legistutor sql "select c.statute, c.subdivision, c.action, count(distinct m.src) matters from e_changed_by c join e_cites m on m.dst = 'mnstat:' || c.statute where c.year = 2026 and c.basis = 'table2' group by all order by matters desc limit 10"
+```
+
+Costs, measured: the first run made about 330 requests to the Revisor's site in six
+minutes and 34 to the county's; bronze for the law is about 250 MB. Indexing the law
+text (28,600 passages) took nine minutes once; later runs embed only what changed.
+
 ## Bronze layout
 
 ```
@@ -112,6 +173,23 @@ Incremental runs use the files themselves as state:
   left on disk.
 
 Attachments are recorded as metadata and links only. The PDFs are not downloaded.
+
+Law sources (see [fetch.py](src/legistutor/fetch.py) for the page store):
+
+```
+data/bronze/mnrevisor/
+  statutes/current/<chapter>.html     the chapter as last fetched (re-fetched monthly)
+  statutes/<edition>/<chapter>.html   the same page filed by edition, so earlier editions are kept
+  table2/<year>/<page>.html           statutes new, amended or repealed, 500 rows a page
+  laws/<year>/<special>/index.html    the session's laws: chapter, bill, presentment date
+  laws/<year>/<special>/chapter/<n>.html   text of a session law
+data/bronze/openstates/mn/
+  sessions.json, bulk/<session>.zip, bills/<session>/<bill>.json
+data/bronze/ordinances/<client>/
+  index.html, categories/<slug>.html, pages/<category>/<slug>.html
+```
+
+Every page has a `.meta.json` beside it (URL, time fetched).
 
 ## Silver layout: the graph
 
@@ -170,6 +248,41 @@ How the derived parts work:
   meetings), staff user accounts, and staff contact names and emails on matters.
   All of it remains in bronze.
 
+### The law in the graph
+
+`data/silver/mnlaw/` and `data/silver/ordinances/<client>/` have the same layout. The
+views below are what `legistutor sql` and the page see: the three graphs as one.
+
+| Vertex | Id | Carries |
+|---|---|---|
+| `statute` | `mnstat:383B`, `mnstat:383B.158` | headnote, status (in force, repealed, renumbered), text, History line, edition |
+| `subdivision` | `mnstat:383B.158#4` | headnote, status, text |
+| `session_law` | `mnlaw:2026:88`, `mnlaw:2025s1:13` | bill, presentment date, title |
+| `bill` | `mnbill:2025-2026:HF4582` | title, subjects, authors, first and last action |
+| `ordinance` | `hennepinmn:ordinance:13` | title, category, adopted and amended dates, notice |
+
+| Edge | From, to | Notes |
+|---|---|---|
+| `cites` | matter, statute | as before |
+| `cites_subdivision` | matter, subdivision | when the citation names one |
+| `cites_law` | matter, session law | "Laws of Minnesota 2023, chapter 64, article 8, section 3" |
+| `cites_ordinance` | matter, ordinance | by number |
+| `changed_by` | statute or subdivision, session law | `basis` is `table2` (with the action, article and section) or `history` (older years, from the History line) |
+| `cross_references` | statute or subdivision, statute | sections and chapters named in the text |
+| `enacted_as` | bill, session law | |
+| `companion` | bill, bill | |
+| `ordinance_cites` | ordinance, statute | `states_authority` when cited in the opening lines |
+| `part_of` | subdivision, section, chapter | |
+
+Tables: `t_statute_change` (every row of the state's table, including chapters not
+fetched), `t_law_section` (the session-law sections behind the changes, with struck
+words as `[-...-]` and inserted words as `{+...+}`), `t_bill_action`, `t_ordinance_text`.
+
+The record writes a stub vertex for each thing it cites (id and number only), so it is
+a complete graph alone. When the owning source has the same id, its row is shown in
+place of the stub. A stub that stays a stub is information: `v_statute` rows with a null
+`status` are cited in the record but are not in Minnesota Statutes as published.
+
 ## Querying
 
 `legistutor sql` and `legistutor.query.connect()` expose every Parquet file as a
@@ -195,6 +308,12 @@ few milliseconds, and the table is already in the shape a Delta Sync index in
 Databricks Vector Search is built on: `chunk_id` is the key, `embedding` the vector,
 and `matter_type`, `status`, `department`, `intro_date` and `last_action_date` the
 filter columns.
+
+Once the law has been fetched, `index` also writes `law_chunks.parquet` beside it: one
+row per passage of statute text (a subdivision, or a section that has none) and of
+ordinance text (a headed section), about 28,600 passages. It is a separate table
+because it is ranked separately: a search returns the record's matters and, apart from
+them, the law whose text matches.
 
 - **What is indexed.** Each matter's `resolution` and `background` sections. A
   section up to 3,000 characters stays whole (most do); longer ones are split
@@ -359,16 +478,56 @@ no external scripts or fonts.
   meetings still without final minutes follow. This answers "what is queued for
   Public Works" exactly, which search and the model cannot.
 
+- **Law.** Appears once `ingest-law` has run.
+  - *What each session changed under the record*: sessions as stacked columns (amended,
+    new, repealed), and for the selected session the changed sections, most relied on
+    first. *Show the change* opens the session law's section with struck and inserted
+    text marked.
+  - *Citations to check*, *County ordinances*, and a *State bills* search.
+  - Any statute, subdivision, session law, ordinance or bill opens in the details pane
+    with its text and its links; from there the graph can be walked as from an item.
+- **Related law.** A search also lists the statute sections and ordinances whose text
+  matches, apart from the record's results. The two lists stay separate (they are
+  separate indexes, and a merged list would bury board items under six times as much
+  statute text), but whichever holds the closer passage is shown first: the question is
+  embedded once, so its best similarity to the record and to the law can be compared.
+  *Ask* gives the best three law results to the model as numbered sources when the law
+  leads, or when the question names the law (statute, law, ordinance, authority,
+  legislature), and not otherwise. The margin for "leads" (`LAW_LEAD_MARGIN` in
+  [web.py](src/legistutor/web.py)) was set from fifteen trial questions and should be
+  set again from the evaluation set.
+- **Summary and questions**, on any statute section, chapter or ordinance. The chat
+  model writes a summary from that text alone, and answers questions about it, naming
+  the subdivision or part behind each point. A summary is written once and kept in
+  `data/gold/legistar/<client>/law_summaries/` with the model that wrote it; it is
+  marked out of date when the text or the model changes. `legistutor summarize-law
+  --top 130` writes them ahead of time for the most-cited sections, about eight
+  seconds each.
+  - What the model reads is bounded by its context window, and the page always says
+    what was read. Everything, when it fits: all but 13 of the 6,952 sections do, and
+    25 of the 104 chapters and 25 of the 28 ordinances. For a question about something
+    longer, the parts closest to the question are chosen with the search index. For a
+    summary of a longer section or ordinance, the parts are read in order until the
+    window is full. For a summary of a longer chapter, only its table of sections is
+    read, and the summary says so.
+  - Section and subdivision numbers in the model's text that are not in what it read
+    are listed in a warning.
+  - Subdivisions are listed closed, as headnotes with a line of preview, and open on a
+    click; the one a link pointed to is open.
+
 Opening an item splits the window: the page stays on the left and the details open on
 the right. Drag the divider, or focus it and use the arrow keys, to resize; the width
 is remembered. Below 900 pixels wide the details cover the page instead.
 
 Each chart has a table or list form beside it, and tooltips appear on keyboard focus
 as well as on hover. Deep links: `/?open=26-0333` opens an item, `/?q=road+repairs`
-runs a search, `/?q=light+rail&topic=1` charts a topic, `/#coming-up` opens the queues.
+runs a search, `/?q=light+rail&topic=1` charts a topic, `/#coming-up` opens the queues,
+`/#law` opens the law tab, `/?node=mnstat:383B.158` opens a statute (or an ordinance,
+session law or bill by its id).
 
 [web.py](src/legistutor/web.py) is a JSON API (`/api/search`, `/api/ask`,
-`/api/matter`, `/api/node`, `/api/queues`, `/api/topic`, `/api/meta`) on the standard library's HTTP
+`/api/matter`, `/api/node`, `/api/queues`, `/api/topic`, `/api/changes`, `/api/law_text`, `/api/law_ask`,
+`/api/ordinances`, `/api/bills`, `/api/meta`) on the standard library's HTTP
 server; the page is [static/index.html](src/legistutor/static/index.html). The
 `App` class holds the logic and does not know about HTTP, so it can move behind
 another framework (a Databricks App, for instance) without changes.
@@ -379,10 +538,17 @@ another framework (a Databricks App, for instance) without changes.
 uv run legistutor refresh
 ```
 
-runs `ingest` for every stage (only what changed upstream is fetched), then `build`
-and `index` (only new or edited passages are embedded). It needs Ollama running for
-the embedding step, and exits non-zero if any fetch failed. To run it every morning
-on Windows:
+runs `ingest` for every stage (only what changed upstream is fetched), `ingest-law`,
+then `build` and `index` (only new or edited passages are embedded). It needs Ollama
+running for the embedding step, and exits non-zero if any fetch failed. `--no-law`
+leaves the law sources alone.
+
+What `ingest-law` re-reads on a routine run: a statute chapter once it is a month old
+(the statutes are republished yearly, with corrections in between); the current
+year's table of changes and list of laws, every run; ordinance pages weekly; one API
+request for the bill sessions, and more only while a session is open. A finished
+session's table and an enacted law's text are fetched once. A typical day is under
+twenty requests. To run it every morning on Windows:
 
 ```
 schtasks /Create /TN "legistutor refresh" /SC DAILY /ST 06:00 /TR "cmd /c cd /d C:\path\to\legistutor && uv run legistutor refresh >> data\logs\refresh.log 2>&1"
@@ -394,7 +560,10 @@ port is already being served, `serve` says so and stops; use `--port` for a seco
 ## GraphFrames (optional)
 
 For graph algorithms (motif finding, PageRank, connected components) the same files
-load into GraphFrames on a local Spark session:
+load into GraphFrames on a local Spark session. `load_graph` reads the record's own
+graph (`silver/legistar/<client>/graph`), in which cited law appears as stub vertices;
+the law graphs under `silver/mnlaw` and `silver/ordinances` have the same two files
+and can be unioned in when an analysis needs them.
 
 ```
 uv sync --extra spark

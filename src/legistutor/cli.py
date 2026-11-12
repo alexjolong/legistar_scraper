@@ -72,6 +72,10 @@ def _build_parser() -> argparse.ArgumentParser:
     law.add_argument("--full", action="store_true", help="fetch every watched chapter again, whatever its age")
     law.add_argument("--skip", nargs="+", choices=LAW_PARTS, default=[], help="parts to leave out")
 
+    summarize = sub.add_parser("summarize-law", help="have the chat model write summaries of the most-cited statute sections ahead of time")
+    summarize.add_argument("--top", type=int, default=25, help="how many sections, most cited first (default: 25)")
+    summarize.add_argument("--again", action="store_true", help="write again even where a current summary exists")
+
     refresh = sub.add_parser("refresh", help="ingest what changed (record and law), then rebuild the graphs and the search index")
     refresh.add_argument("--rps", type=float, default=5.0, help="max requests per second to Legistar (default: 5)")
     refresh.add_argument("--workers", type=int, default=4, help="concurrent fetch threads (default: 4)")
@@ -222,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         graph.demo(args.data_dir, args.client)
         return 0
-    if args.command in ("index", "search", "ask", "refresh", "serve"):
+    if args.command in ("index", "search", "ask", "refresh", "serve", "summarize-law"):
         from .embed import EmbeddingError
         from .llm import LLMError
 
@@ -233,6 +237,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.command == "refresh":
                 return _refresh(args)
+            if args.command == "summarize-law":
+                return _summarize_law(args)
             if args.command == "serve":
                 from . import web
 
@@ -306,6 +312,31 @@ def _ingest_law(args: argparse.Namespace) -> int:
             print(f"bills: {openstates.ingest(args.data_dir, config.bills_api_key(), since_year=args.since_year)}")
         except openstates.MissingKey as exc:
             print(f"bills: skipped. {exc}")
+    return 1 if failed else 0
+
+
+def _summarize_law(args: argparse.Namespace) -> int:
+    """Summaries are otherwise written the first time someone asks for one in the page."""
+    from . import web
+
+    app = web.application(args.data_dir, args.client)
+    if not app.has_law:
+        print("No statutes have been fetched. Run `legistutor ingest-law` and `legistutor build` first.", file=sys.stderr)
+        return 1
+    written = kept = failed = 0
+    for node, label, matters in app.most_cited_sections(args.top):
+        events = list(app.law_ask({"id": node, "fresh": "1" if args.again else ""}))
+        name, data = events[-1]
+        if name == "error":
+            failed += 1
+            print(f"{label}: {data['message']}")
+        elif data["kept"]:
+            kept += 1
+        else:
+            written += 1
+            flags = f"; check: {'; '.join(data['unsupported'])}" if data["unsupported"] else ""
+            print(f"{label} (cited by {matters}): written in {data['seconds']} s{flags}")
+    print(f"{written} written, {kept} already current, {failed} failed -> {web.notes_dir(args.data_dir, args.client)}")
     return 1 if failed else 0
 
 
