@@ -48,9 +48,15 @@ uv run pytest
 ```
 
 `index`, `search`, `ask`, `serve` and `refresh` need [Ollama](https://ollama.com)
-running locally with the embedding model (`ollama pull qwen3-embedding:0.6b`).
+installed locally with the embedding model (`ollama pull qwen3-embedding:0.6b`).
+If Ollama is not running (after a restart, say) these commands start it, and they
+stop before doing any work if it cannot be started or a model is missing.
 `ask` and the page's answers also need a chat model; see
-[Asking questions](#asking-questions).
+[Asking questions](#asking-questions). `uv run legistutor check` tries every
+dependency (models, data directory, outside sites) and says what is missing.
+
+In a Databricks workspace the models are serving endpoints instead; see
+[Running on Databricks](#running-on-databricks).
 
 The first `ingest` is a full backfill: about 16,000 requests, roughly an hour at the
 default 5 requests per second. Later runs fetch only what changed and take a minute
@@ -406,8 +412,8 @@ Notes:
 - The first answer after a pause waits for the model to load into GPU memory (up to
   a minute on a 12 GB card); after that an answer takes roughly 6 to 12 seconds.
 - [llm.py](src/legistutor/llm.py) keeps the model behind a three-member
-  interface (`ChatProvider`). A Databricks model serving endpoint would be a second
-  class there; nothing above it changes.
+  interface (`ChatProvider`). `OllamaChat` and `DatabricksChat` (a model serving
+  endpoint) are the two classes there; nothing above them differs.
 
 ### Choosing the chat model
 
@@ -530,7 +536,8 @@ session law or bill by its id).
 `/api/ordinances`, `/api/bills`, `/api/meta`) on the standard library's HTTP
 server; the page is [static/index.html](src/legistutor/static/index.html). The
 `App` class holds the logic and does not know about HTTP, so it can move behind
-another framework (a Databricks App, for instance) without changes.
+another framework without changes. The same server runs as a Databricks App; see
+[Running on Databricks](#running-on-databricks).
 
 ## Keeping it current
 
@@ -556,6 +563,69 @@ schtasks /Create /TN "legistutor refresh" /SC DAILY /ST 06:00 /TR "cmd /c cd /d 
 
 Restart `legistutor serve` after a refresh; it loads the index when it starts. If the
 port is already being served, `serve` says so and stops; use `--port` for a second copy.
+
+## Running on Databricks
+
+The same code runs in a Databricks workspace with three substitutions. None of this
+has been run in a workspace yet; `check` (step 3) is there to find what differs.
+
+| Locally | On Databricks |
+|---|---|
+| Ollama for embeddings and chat | model serving endpoints ([embed.py](src/legistutor/embed.py), [llm.py](src/legistutor/llm.py)) |
+| `./data` | a directory in a Unity Catalog volume |
+| `legistutor serve` on 127.0.0.1 | a Databricks App running [app.py](app.py) |
+| `legistutor refresh` by hand or `schtasks` | a scheduled job running [notebooks/legistutor_job.py](notebooks/legistutor_job.py) |
+
+DuckDB over Parquet stays as it is, and so does the search (vectors in Parquet, not
+Vector Search).
+
+The provider is `databricks` whenever the code runs on a cluster or in an App
+(`DATABRICKS_RUNTIME_VERSION` or `DATABRICKS_APP_NAME` is set), and `ollama` anywhere
+else; `LEGISTUTOR_PROVIDER` overrides. Credentials come from the Databricks SDK: the
+notebook's identity on a cluster, the app's service principal in an App.
+
+| Variable | Default on Databricks | |
+|---|---|---|
+| `LEGISTUTOR_DATA_DIR` | `./data` | set to the volume directory, e.g. `/Volumes/<catalog>/<schema>/<volume>/data` |
+| `LEGISTUTOR_EMBED_MODEL` | `databricks-qwen3-embedding-0-6b` | name of the embedding endpoint |
+| `LEGISTUTOR_CHAT_MODEL` | `databricks-claude-sonnet-5-5` | name of the chat endpoint |
+| `LEGISTUTOR_CONTEXT_TOKENS` | `60000` | how much prompt to send; long statute chapters are read up to this |
+| `LEGISTUTOR_MAX_TOKENS` | `4000` | longest answer |
+| `LEGISTUTOR_TEMPERATURE` | unset | sent only if set; some models refuse it |
+
+Setting up:
+
+1. Create a volume (Catalog > your schema > Create > Volume) and decide on a
+   directory in it for the data.
+2. Clone this repository as a Git folder (Workspace > Create > Git folder).
+3. Open [notebooks/legistutor_job.py](notebooks/legistutor_job.py), set `data_dir`
+   and the two endpoint names, and run it with `command` = `check`. Fix whatever it
+   reports as `FAIL` before going on: a wrong endpoint name, no permission on the
+   volume, a site the workspace cannot reach.
+4. Run it with `command` = `refresh`. The first run is the full backfill (about an
+   hour of fetching, then embedding every passage). The index built on your own
+   machine is not carried over: vectors from Ollama's build of the model are not
+   mixed with the endpoint's.
+5. Schedule the notebook as a job (Schedule, in the notebook) with `command` =
+   `refresh`. For state bills, put the Open States key in a secret scope as
+   `PLURAL_POLICY_API_KEY` and name the scope in `secret_scope`.
+6. Create the app (New > App > Custom), pointing it at the Git folder. Edit
+   [app.yaml](app.yaml) first so `LEGISTUTOR_DATA_DIR` and the endpoint names match
+   the job's. Under the app's resources add the two serving endpoints (Can query)
+   and the volume (Can read and write), which grants them to the app's service
+   principal. Deploy.
+
+How the app differs from the local page:
+
+- A cluster sees the volume as files under `/Volumes`; an App does not. At start the
+  app downloads the `silver` and `gold` directories (about 180 MB today) to its own
+  disk through the Files API ([databricks.py](src/legistutor/databricks.py)) and
+  reads those.
+- It loads that copy once. After the job refreshes the data, restart the app to see it.
+- Summaries of statutes written in the app are uploaded back to the volume, so each is
+  written once. Summaries written by the local model are written again by the endpoint's.
+- It listens on `0.0.0.0` at `DATABRICKS_APP_PORT`; Databricks signs people in before
+  a request reaches it. Everyone who can use the app sees the same public record.
 
 ## GraphFrames (optional)
 

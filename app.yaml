@@ -1,0 +1,13 @@
+# Databricks App configuration. See "Running on Databricks" in README.md.
+command: ["python", "app.py"]
+
+env:
+  # The Unity Catalog volume directory the refresh job writes to. Change it to yours.
+  - name: LEGISTUTOR_DATA_DIR
+    value: /Volumes/main/default/legistutor/data
+  # Names of the model serving endpoints. The embedding endpoint must be the one the
+  # job indexed with; the page refuses to start on a mismatch.
+  - name: LEGISTUTOR_EMBED_MODEL
+    value: databricks-qwen3-embedding-0-6b
+  - name: LEGISTUTOR_CHAT_MODEL
+    value: databricks-claude-sonnet-5-5

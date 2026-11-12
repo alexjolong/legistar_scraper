@@ -8,6 +8,26 @@ from pathlib import Path
 
 DEFAULT_CHAT_MODEL = "gemma4:12b"
 DEFAULT_EMBED_MODEL = "qwen3-embedding:0.6b"
+# On Databricks a "model" is the name of a model serving endpoint.
+DATABRICKS_CHAT_ENDPOINT = "databricks-claude-sonnet-5-5"
+DATABRICKS_EMBED_ENDPOINT = "databricks-qwen3-embedding-0-6b"
+PROVIDERS = ("ollama", "databricks")
+
+
+def _provider() -> str:
+    """Where the models are. Inside a Databricks cluster or App it is the workspace's
+    model serving unless ``LEGISTUTOR_PROVIDER`` says otherwise; anywhere else, Ollama."""
+    named = os.environ.get("LEGISTUTOR_PROVIDER", "").strip().lower()
+    if named:
+        if named not in PROVIDERS:
+            raise ValueError(f"LEGISTUTOR_PROVIDER is {named!r}; it must be one of {', '.join(PROVIDERS)}")
+        return named
+    return "databricks" if os.environ.get("DATABRICKS_RUNTIME_VERSION") or os.environ.get("DATABRICKS_APP_NAME") else "ollama"
+
+
+def data_dir() -> Path:
+    """Root of the data lake: ``LEGISTUTOR_DATA_DIR`` (a Unity Catalog volume path on Databricks), else ``./data``."""
+    return Path(os.environ.get("LEGISTUTOR_DATA_DIR", "").strip() or "data")
 
 
 def _ollama_host() -> str:
@@ -53,8 +73,12 @@ def bills_api_key() -> str | None:
 
 @dataclass(frozen=True)
 class Settings:
-    chat_model: str
+    provider: str  # "ollama" or "databricks"
+    chat_model: str  # an Ollama model, or a Databricks serving endpoint
     embed_model: str
+    context_tokens: int  # Databricks: how much prompt to send the chat endpoint
+    max_tokens: int  # Databricks: longest answer to ask for
+    temperature: float | None  # Databricks: None leaves the endpoint's default
     ollama_host: str
     ollama_num_ctx: int  # context window to request from Ollama, in tokens
     ollama_think: bool | None  # reasoning models: think before answering? None = the model's default
@@ -62,9 +86,15 @@ class Settings:
 
 def settings() -> Settings:
     env = os.environ.get
+    provider = _provider()
+    on_databricks = provider == "databricks"
     return Settings(
-        chat_model=env("LEGISTUTOR_CHAT_MODEL", DEFAULT_CHAT_MODEL),
-        embed_model=env("LEGISTUTOR_EMBED_MODEL", DEFAULT_EMBED_MODEL),
+        provider=provider,
+        chat_model=env("LEGISTUTOR_CHAT_MODEL") or (DATABRICKS_CHAT_ENDPOINT if on_databricks else DEFAULT_CHAT_MODEL),
+        embed_model=env("LEGISTUTOR_EMBED_MODEL") or (DATABRICKS_EMBED_ENDPOINT if on_databricks else DEFAULT_EMBED_MODEL),
+        context_tokens=int(env("LEGISTUTOR_CONTEXT_TOKENS") or 60000),
+        max_tokens=int(env("LEGISTUTOR_MAX_TOKENS") or 4000),
+        temperature=float(env("LEGISTUTOR_TEMPERATURE")) if env("LEGISTUTOR_TEMPERATURE") else None,
         ollama_host=_ollama_host(),
         ollama_num_ctx=int(env("LEGISTUTOR_OLLAMA_NUM_CTX", "16384")),
         ollama_think=_think(env("LEGISTUTOR_OLLAMA_THINK")),

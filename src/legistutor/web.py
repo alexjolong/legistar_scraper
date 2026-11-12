@@ -39,7 +39,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import config, gold, lawnotes, llm, rag
-from .embed import EmbeddingError, OllamaEmbedder
+from .embed import EmbeddingError
+from .embed import embedder as make_embedder
 from .law import chapter_sort_key
 from .search import Filters, Hit, Searcher
 from .text import normalize_file_number
@@ -101,12 +102,14 @@ class App:
         client: str,
         embed_model: str,
         notes_dir: Path | None = None,
+        summary_written: Callable[[Path], None] | None = None,
     ) -> None:
         self.searcher = searcher
         self.chat = chat
         self.client = client
         self.embed_model = embed_model
         self.notes_dir = notes_dir  # where the model's summaries of the law are kept; None keeps none
+        self.summary_written = summary_written  # told of each summary file written, to copy it somewhere lasting
         # One DuckDB connection is shared by the request threads.
         self.lock = threading.Lock()
         views = {row[0] for row in searcher.con.sql("select table_name from information_schema.tables").fetchall()}
@@ -373,10 +376,12 @@ class App:
             full = "".join(answer).strip()
             unsupported = lawnotes.unsupported_references(full, scope, selection)
             if full and not question:
-                lawnotes.write_summary(
+                written = lawnotes.write_summary(
                     self.notes_dir, scope.id, model=chat.model, fingerprint=mark, text=full,
                     coverage=selection.coverage, basis=selection.basis, unsupported=unsupported,
                 )  # fmt: skip
+                if written and self.summary_written:
+                    self.summary_written(written)
             yield "done", {"model": chat.model, "kept": False, "seconds": round(time.monotonic() - started, 1), "unsupported": unsupported}
         except lawnotes.NothingToRead as exc:
             yield "error", {"message": str(exc)}
@@ -853,9 +858,11 @@ def _handler(app: App) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def make_server(app: App, port: int = 8765) -> ThreadingHTTPServer:
+def make_server(app: App, port: int = 8765, host: str = "127.0.0.1") -> ThreadingHTTPServer:
+    """Listens on this machine only unless told otherwise. A Databricks App must listen on
+    every interface; there the platform's proxy is what faces people, and it signs them in."""
     try:
-        server = _Server(("127.0.0.1", port), _handler(app))  # this machine only
+        server = _Server((host, port), _handler(app))
     except OSError as exc:
         raise RuntimeError(f"Port {port} is in use. Is the page already running? Stop it, or pick another with --port.") from exc
     server.daemon_threads = True
@@ -874,21 +881,28 @@ def notes_dir(data_dir: Path, client: str) -> Path:
 
 def application(data_dir: Path, client: str) -> App:
     settings = config.settings()
-    searcher = Searcher(data_dir, client, OllamaEmbedder(settings.embed_model, settings.ollama_host))
+    mirror = None
+    if settings.provider == "databricks":
+        from . import databricks
+
+        # In a Databricks App the volume is not on disk: read a local copy, and send new summaries back.
+        data_dir, mirror = databricks.mirror_if_needed(Path(data_dir))
+    searcher = Searcher(data_dir, client, make_embedder(settings))
     return App(
         searcher,
         lambda: llm.chat_model(config.settings()),
         client=client,
         embed_model=settings.embed_model,
         notes_dir=notes_dir(data_dir, client),
+        summary_written=mirror.push if mirror else None,
     )
 
 
-def serve(data_dir: Path, client: str, *, port: int = 8765, open_browser: bool = True) -> None:
+def serve(data_dir: Path, client: str, *, port: int = 8765, host: str = "127.0.0.1", open_browser: bool = True) -> None:
     app = application(data_dir, client)
-    server = make_server(app, port)
-    address = f"http://127.0.0.1:{server.server_address[1]}/"
-    print(f"Serving {gold.chunks_path(data_dir, client)} at {address}  (Ctrl+C to stop)")
+    server = make_server(app, port, host)
+    address = f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{server.server_address[1]}/"
+    print(f"Serving {gold.chunks_path(app.searcher.data_dir, client)} at {address}  (Ctrl+C to stop)", flush=True)
     if open_browser:
         webbrowser.open(address)
     try:

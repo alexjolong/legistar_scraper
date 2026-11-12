@@ -1,0 +1,8 @@
+# For Databricks (the App installs this file; the job notebook does too).
+# Locally, use `uv sync`; pyproject.toml is the source of these.
+duckdb>=2.0.0
+httpx>=0.28.1
+lxml>=6.1.3
+pyarrow>=26.0.1
+striprtf>=0.0.35
+databricks-sdk>=0.40

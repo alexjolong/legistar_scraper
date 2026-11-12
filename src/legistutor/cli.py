@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from datetime import date
 from pathlib import Path
 
-from . import bronze
+from . import bronze, config
 from .client import LegistarClient
 
 
@@ -20,7 +21,9 @@ LAW_PARTS = ("statutes", "changes", "bills", "ordinances")
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="legistutor", description="Collect, search and question a local government legislative record.")
     parser.add_argument("--client", default="hennepinmn", help="Legistar tenant name (default: hennepinmn)")
-    parser.add_argument("--data-dir", type=Path, default=Path("data"), help="root of the data lake (default: ./data)")
+    parser.add_argument(
+        "--data-dir", type=Path, default=config.data_dir(), help="root of the data lake (default: LEGISTUTOR_DATA_DIR, else ./data)"
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -64,7 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
     retrieval_options(sub.add_parser("search", help="find matters by meaning, keywords and file number"))
     ask = sub.add_parser("ask", help="answer a question from the record, with citations")
     retrieval_options(ask)
-    ask.add_argument("--model", help="Ollama chat model to answer with (default: LEGISTUTOR_CHAT_MODEL)")
+    ask.add_argument("--model", help="chat model (Ollama) or serving endpoint (Databricks) to answer with (default: LEGISTUTOR_CHAT_MODEL)")
 
     law = sub.add_parser("ingest-law", help="fetch statutes, session laws, bills and county ordinances")
     law.add_argument("--chapters", nargs="*", default=[], metavar="CHAPTER", help="statute chapters to watch besides the ones the record cites, e.g. 13 471")
@@ -81,18 +84,27 @@ def _build_parser() -> argparse.ArgumentParser:
     refresh.add_argument("--workers", type=int, default=4, help="concurrent fetch threads (default: 4)")
     refresh.add_argument("--no-law", action="store_true", help="leave statutes, session laws, bills and ordinances as they are")
 
-    serve = sub.add_parser("serve", help="run the local web page: ask, search, and explore the graph")
-    serve.add_argument("--port", type=int, default=8765, help="port to listen on (default: 8765)")
+    check = sub.add_parser("check", help="try the models, the data directory and the outside sites, and say what is missing")
+    check.add_argument("--no-sites", action="store_true", help="skip the outside sites the pipeline reads")
+
+    # A Databricks App is given its port, and must listen on every interface behind the platform's proxy.
+    app_port = os.environ.get("DATABRICKS_APP_PORT")
+    serve = sub.add_parser("serve", help="run the web page: ask, search, and explore the graph")
+    serve.add_argument("--port", type=int, default=int(app_port or 8765), help="port to listen on (default: 8765, or DATABRICKS_APP_PORT)")
+    serve.add_argument(
+        "--host",
+        default="0.0.0.0" if app_port else "127.0.0.1",  # noqa: S104
+        help="address to listen on (default: 127.0.0.1, this machine only; 0.0.0.0 in a Databricks App)",
+    )
     serve.add_argument("--no-browser", action="store_true", help="do not open the page in a browser")
     return parser
 
 
 def _searcher(args: argparse.Namespace):
-    from . import config, search
-    from .embed import OllamaEmbedder
+    from . import search
+    from .embed import embedder
 
-    settings = config.settings()
-    return search.Searcher(args.data_dir, args.client, OllamaEmbedder(settings.embed_model, settings.ollama_host))
+    return search.Searcher(args.data_dir, args.client, embedder(config.settings()))
 
 
 def _retrieve(args: argparse.Namespace):
@@ -128,7 +140,7 @@ def _search(args: argparse.Namespace) -> int:
 
 
 def _ask(args: argparse.Namespace) -> int:
-    from . import config, llm, rag
+    from . import llm, rag
 
     hits = _retrieve(args)
     chat = llm.chat_model(config.settings(), args.model)
@@ -195,12 +207,20 @@ def _ingest(args: argparse.Namespace) -> int:
     return 1 if any(r.failed for r in results) else 0
 
 
+def _utf8_stdout() -> None:
+    """Titles in the record are not all ASCII, and a Windows console's default encoding is. A
+    notebook's output stream is already UTF-8 and has no ``reconfigure``."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
+        force=True,  # a notebook has already set up logging; ours should still apply
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
     if args.command == "ingest":
@@ -217,21 +237,33 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sql":
         from . import query
 
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        _utf8_stdout()
         query.connect(args.data_dir, args.client).sql(args.query).show(max_rows=200, max_width=200)
         return 0
     if args.command == "graph-demo":
         from . import graph
 
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        _utf8_stdout()
         graph.demo(args.data_dir, args.client)
         return 0
+    if args.command == "check":
+        from . import check
+
+        _utf8_stdout()
+        if config.settings().provider == "ollama":
+            try:
+                _check_model_host(args)
+            except RuntimeError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+        return 1 if check.run(args.data_dir, args.client, sites=not args.no_sites) else 0
     if args.command in ("index", "search", "ask", "refresh", "serve", "summarize-law"):
         from .embed import EmbeddingError
         from .llm import LLMError
 
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        _utf8_stdout()
         try:
+            # Before anything slow: a refresh should not fetch for minutes and then find no model host.
+            _check_model_host(args)
             if args.command == "index":
                 print(json.dumps(_index(args, full=args.full), indent=2))
                 return 0
@@ -242,13 +274,27 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "serve":
                 from . import web
 
-                web.serve(args.data_dir, args.client, port=args.port, open_browser=not args.no_browser)
+                in_app = bool(os.environ.get("DATABRICKS_APP_PORT"))
+                web.serve(args.data_dir, args.client, port=args.port, host=args.host, open_browser=not (args.no_browser or in_app))
                 return 0
             return _search(args) if args.command == "search" else _ask(args)
         except (EmbeddingError, LLMError, FileNotFoundError, RuntimeError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
     return 2
+
+
+def _check_model_host(args: argparse.Namespace) -> None:
+    """Locally, start Ollama if it is not running and check it has the models this command uses."""
+    from . import ollama
+
+    settings = config.settings()
+    if settings.provider != "ollama":
+        return
+    models = [settings.embed_model]
+    if args.command in ("ask", "summarize-law"):
+        models.append(getattr(args, "model", None) or settings.chat_model)
+    ollama.ensure_running(settings.ollama_host, models)
 
 
 def _build(args: argparse.Namespace) -> dict:
@@ -279,7 +325,7 @@ def _watched_chapters(args: argparse.Namespace) -> list[str]:
 def _ingest_law(args: argparse.Namespace) -> int:
     from datetime import date
 
-    from . import config, law, openstates, ordinances, revisor
+    from . import law, openstates, ordinances, revisor
     from .fetch import Fetcher
 
     started = time.monotonic()
@@ -341,11 +387,10 @@ def _summarize_law(args: argparse.Namespace) -> int:
 
 
 def _index(args: argparse.Namespace, *, full: bool = False) -> dict:
-    from . import config, gold
-    from .embed import OllamaEmbedder
+    from . import gold
+    from .embed import embedder
 
-    settings = config.settings()
-    return gold.build(args.data_dir, args.client, OllamaEmbedder(settings.embed_model, settings.ollama_host), full=full)
+    return gold.build(args.data_dir, args.client, embedder(config.settings()), full=full)
 
 
 def _refresh(args: argparse.Namespace) -> int:

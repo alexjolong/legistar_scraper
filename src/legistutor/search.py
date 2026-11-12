@@ -122,6 +122,7 @@ class Searcher:
         if not path.exists():
             raise FileNotFoundError(f"No search index at {path}. Run `legistutor index` first.")
         self.embedder = embedder
+        self.data_dir = Path(data_dir)
         self.con = query.connect(data_dir, client)
         source = path.resolve().as_posix().replace("'", "''")
         # Parquet gives the vectors back as variable-length lists; the similarity

@@ -1,9 +1,9 @@
 """Text embeddings behind a small interface, so the model host can change.
 
-Locally the host is Ollama. On Databricks the same interface would wrap a model
-serving endpoint; the three models named here are all served there, so vectors
-built locally are a fair preview of what the workspace would produce. (Ollama
-runs a quantised build, so re-embed after a move rather than mixing vectors.)
+Locally the host is Ollama; on Databricks it is a model serving endpoint. The three
+model families named here are served in both places, so vectors built locally are a
+fair preview of what the workspace produces. (Ollama runs a quantised build, and the
+index records the model's name, so an index is rebuilt after a move, never mixed.)
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from collections.abc import Sequence
 from typing import Protocol
 
 import httpx
+
+from .config import Settings
 
 
 class EmbeddingError(RuntimeError):
@@ -73,3 +75,45 @@ class OllamaEmbedder:
 
     def embed_query(self, text: str) -> list[float]:
         return self.embed_documents([query_prefix(self.model) + text])[0]
+
+
+class DatabricksEmbedder:
+    """An embedding model behind a Databricks model serving endpoint; ``model`` is the endpoint's name."""
+
+    def __init__(self, endpoint: str, *, transport: httpx.BaseTransport | None = None, attempts: int = 5) -> None:
+        from . import databricks
+
+        self.model = endpoint
+        self._databricks = databricks
+        self._attempts = attempts
+        try:
+            self._http = databricks.serving_client(transport=transport)
+        except databricks.DatabricksError as exc:
+            raise EmbeddingError(str(exc)) from exc
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        for attempt in range(1, self._attempts + 1):
+            try:
+                response = self._http.post(f"{self.model}/invocations", json={"input": list(texts)})
+            except httpx.TransportError as exc:
+                raise EmbeddingError(f"Cannot reach the Databricks workspace at {self._http.base_url.host}. ({exc})") from exc
+            if response.status_code not in self._databricks.RETRY_STATUSES or attempt == self._attempts:
+                break
+            self._databricks.wait_before_retry(response, attempt)
+        if response.status_code != 200:
+            raise EmbeddingError(self._databricks.problem(response, self.model))
+        rows = sorted(response.json()["data"], key=lambda row: row.get("index", 0))
+        if len(rows) != len(texts):
+            raise EmbeddingError(f"Asked for {len(texts)} embeddings, got {len(rows)}")
+        return [normalize(row["embedding"]) for row in rows]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([query_prefix(self.model) + text])[0]
+
+
+def embedder(settings: Settings) -> Embedder:
+    if settings.provider == "databricks":
+        return DatabricksEmbedder(settings.embed_model)
+    return OllamaEmbedder(settings.embed_model, settings.ollama_host)

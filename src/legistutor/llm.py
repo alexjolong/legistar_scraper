@@ -1,8 +1,8 @@
-"""The chat model that writes answers: a local model served by Ollama.
+"""The chat model that writes answers: a local model served by Ollama, or a Databricks
+model serving endpoint.
 
-Everything above this module only sees :class:`ChatProvider`, so another host (a
-Databricks model serving endpoint, say) is one more class here and nothing else
-changes.
+Everything above this module only sees :class:`ChatProvider`, so another host is one
+more class here and nothing else changes.
 """
 
 from __future__ import annotations
@@ -111,7 +111,101 @@ class OllamaChat:
             raise LLMError(f"Cannot reach Ollama at {self._host}. Is it running? ({exc})") from exc
 
 
+class DatabricksChat:
+    """A chat model behind a Databricks model serving endpoint; ``model`` is the endpoint's name.
+
+    Foundation model and external model endpoints all take the same chat request and
+    stream the answer back as server-sent events, whichever model is behind them.
+    """
+
+    name = "databricks"
+
+    def __init__(
+        self,
+        endpoint: str,
+        *,
+        context_tokens: int = 60000,
+        max_tokens: int = 4000,
+        temperature: float | None = None,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        from . import databricks
+
+        self.model = endpoint
+        self.max_tokens = max_tokens
+        self.temperature = temperature  # None leaves the endpoint's default; some models refuse the setting
+        self.context_chars = int(context_tokens * 3.5)
+        self._databricks = databricks
+        try:
+            self._http = databricks.serving_client(timeout=httpx.Timeout(600.0, connect=10.0), transport=transport)
+        except databricks.DatabricksError as exc:
+            raise LLMError(str(exc)) from exc
+
+    def stream(self, system: str, user: str) -> Iterator[str]:
+        payload: dict = {
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "max_tokens": self.max_tokens,
+            "stream": True,
+        }
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
+        attempts = 4
+        for attempt in range(1, attempts + 1):
+            try:
+                with self._http.stream("POST", f"{self.model}/invocations", json=payload) as response:
+                    if response.status_code in self._databricks.RETRY_STATUSES and attempt < attempts:
+                        response.read()
+                        log.warning("%s is busy (%s); waiting to try again", self.model, response.status_code)
+                        self._databricks.wait_before_retry(response, attempt)
+                        continue
+                    if response.status_code != 200:
+                        response.read()
+                        raise LLMError(self._databricks.problem(response, self.model))
+                    yield from self._events(response)
+                    return
+            except httpx.TransportError as exc:
+                raise LLMError(f"Cannot reach the Databricks workspace at {self._http.base_url.host}. ({exc})") from exc
+
+    def _events(self, response: httpx.Response) -> Iterator[str]:
+        finish = None
+        for line in response.iter_lines():
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            event = json.loads(data)
+            if event.get("error"):
+                raise LLMError(f"{self.model}: {event['error']}")
+            for choice in event.get("choices", []):
+                finish = choice.get("finish_reason") or finish
+                yield from _text_of((choice.get("delta") or {}).get("content"))
+        if finish == "length":
+            raise LLMError(
+                f"The answer above stopped at the {self.max_tokens}-token limit and is incomplete. Raise LEGISTUTOR_MAX_TOKENS."
+            )
+
+
+def _text_of(content) -> Iterator[str]:
+    """A delta's text. It is a string, or, from a model that reasons first, a list of
+    parts of which only the text ones are shown."""
+    if isinstance(content, str):
+        if content:
+            yield content
+    elif isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+                yield part["text"]
+
+
 def chat_model(settings: Settings, model: str | None = None) -> ChatProvider:
+    if settings.provider == "databricks":
+        return DatabricksChat(
+            model or settings.chat_model,
+            context_tokens=settings.context_tokens,
+            max_tokens=settings.max_tokens,
+            temperature=settings.temperature,
+        )
     return OllamaChat(
         model or settings.chat_model, settings.ollama_host, num_ctx=settings.ollama_num_ctx, think=settings.ollama_think
     )

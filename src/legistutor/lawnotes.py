@@ -282,12 +282,13 @@ def read_summary(directory: Path | None, node: str) -> dict[str, Any] | None:
         return None
 
 
-def write_summary(directory: Path | None, node: str, **facts: Any) -> None:
+def write_summary(directory: Path | None, node: str, **facts: Any) -> Path | None:
     if directory is None:
-        return
+        return None
     directory.mkdir(parents=True, exist_ok=True)
     path = _path(directory, node)
     temporary = path.with_name(path.name + ".tmp")
     record = {"id": node, "written_utc": datetime.now(UTC).isoformat(timespec="seconds"), **facts}
     temporary.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
     os.replace(temporary, path)
+    return path
