@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # legistutor: check, refresh, summarize
 # MAGIC
@@ -17,11 +21,11 @@ dbutils.library.restartPython()  # noqa: F821 - provided by the notebook
 
 # COMMAND ----------
 
-dbutils.widgets.text("data_dir", "/Volumes/main/default/legistutor/data", "Data directory (UC volume)")  # noqa: F821
+dbutils.widgets.text("data_dir", "/Volumes/sbx_ida_workshop/alex_legistar_rag/data/", "Data directory (UC volume)")  # noqa: F821
 dbutils.widgets.dropdown("command", "check", ["check", "refresh", "refresh --no-law", "index --full", "summarize-law", "status"], "Command")  # noqa: F821
 dbutils.widgets.text("embed_endpoint", "databricks-qwen3-embedding-0-6b", "Embedding endpoint")  # noqa: F821
 dbutils.widgets.text("chat_endpoint", "databricks-claude-sonnet-5-5", "Chat endpoint")  # noqa: F821
-dbutils.widgets.text("secret_scope", "", "Secret scope holding PLURAL_POLICY_API_KEY (optional)")  # noqa: F821
+dbutils.widgets.text("plural_policy_api_key_path", "", "3-part Unity Catalog path locating PLURAL_POLICY_API_KEY (optional)")  # noqa: F821
 
 # COMMAND ----------
 
@@ -35,9 +39,11 @@ os.environ["LEGISTUTOR_EMBED_MODEL"] = dbutils.widgets.get("embed_endpoint")  # 
 os.environ["LEGISTUTOR_CHAT_MODEL"] = dbutils.widgets.get("chat_endpoint")  # noqa: F821
 
 # State bills come from the Open States API, which needs a key. Without one, bills are skipped.
-scope = dbutils.widgets.get("secret_scope").strip()  # noqa: F821
-if scope:
-    os.environ["PLURAL_POLICY_API_KEY"] = dbutils.secrets.get(scope, "PLURAL_POLICY_API_KEY")  # noqa: F821
+secret_path = dbutils.widgets.get("plural_policy_api_key_path").split('.')  # noqa: F821
+if len(secret_path):
+    os.environ["PLURAL_POLICY_API_KEY"] = dbutils.secrets.get(catalog=secret_path[0], schema=secret_path[1], key=secret_path[2])  # noqa: F821
+else:
+    raise RuntimeWarning("plural_policy_api_key_path must be a 3-part unity catalog namespace locating a secret")
 
 # COMMAND ----------
 

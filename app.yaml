@@ -4,7 +4,7 @@ command: ["python", "app.py"]
 env:
   # The Unity Catalog volume directory the refresh job writes to. Change it to yours.
   - name: LEGISTUTOR_DATA_DIR
-    value: /Volumes/main/default/legistutor/data
+    value: /Volumes/sbx_ida_workshop/alex_legistar_rag/data/
   # Names of the model serving endpoints. The embedding endpoint must be the one the
   # job indexed with; the page refuses to start on a mismatch.
   - name: LEGISTUTOR_EMBED_MODEL
