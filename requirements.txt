@@ -1,11 +1,11 @@
-# For Databricks (the App installs this file; the job notebook does too).
+# For the Databricks App, which installs this file. The job notebook installs requirements-job.txt.
 # Locally, use `uv sync`; pyproject.toml is the source of these.
 duckdb>=2.0.0
 httpx>=0.28.1
 lxml>=6.1.3
-# Kept loose on purpose: a Databricks App comes with pyarrow 14-16 and NumPy 1.26, and its
-# databricks-sql-connector needs pyarrow<17. Asking for a newer pyarrow replaces it with one
-# that refuses NumPy 1.x, and the app fails on import. The tests pass on pyarrow 16.1.
-pyarrow>=14.0.1
+# Held below 17 on purpose: a Databricks App comes with NumPy 1.26, and its
+# databricks-sql-connector needs pyarrow<17. Left to itself pip installs the newest pyarrow,
+# which refuses NumPy 1.x, and the app fails on import. The tests pass on pyarrow 16.1.
+pyarrow>=14.0.1,<17
 striprtf>=0.0.35
 databricks-sdk>=0.40

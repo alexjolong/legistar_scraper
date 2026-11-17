@@ -13,7 +13,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -q -r ../requirements.txt
+# MAGIC %pip install -q -r ../requirements-job.txt
 
 # COMMAND ----------
 
