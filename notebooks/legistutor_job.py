@@ -39,11 +39,12 @@ os.environ["LEGISTUTOR_EMBED_MODEL"] = dbutils.widgets.get("embed_endpoint")  # 
 os.environ["LEGISTUTOR_CHAT_MODEL"] = dbutils.widgets.get("chat_endpoint")  # noqa: F821
 
 # State bills come from the Open States API, which needs a key. Without one, bills are skipped.
-secret_path = dbutils.widgets.get("plural_policy_api_key_path").split('.')  # noqa: F821
-if len(secret_path):
-    os.environ["PLURAL_POLICY_API_KEY"] = dbutils.secrets.get(catalog=secret_path[0], schema=secret_path[1], key=secret_path[2])  # noqa: F821
-else:
-    raise RuntimeWarning("plural_policy_api_key_path must be a 3-part unity catalog namespace locating a secret")
+secret_path = [part.strip() for part in dbutils.widgets.get("plural_policy_api_key_path").split(".") if part.strip()]  # noqa: F821
+if len(secret_path) == 3:
+    catalog, schema, key = secret_path
+    os.environ["PLURAL_POLICY_API_KEY"] = dbutils.secrets.get(catalog=catalog, schema=schema, key=key)  # noqa: F821
+elif secret_path:
+    raise ValueError("plural_policy_api_key_path must be catalog.schema.key, the three-part name of a Unity Catalog secret")
 
 # COMMAND ----------
 
