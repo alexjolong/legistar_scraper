@@ -22,7 +22,7 @@ dbutils.library.restartPython()  # noqa: F821 - provided by the notebook
 # COMMAND ----------
 
 dbutils.widgets.text("data_dir", "/Volumes/sbx_ida_workshop/alex_legistar_rag/data/", "Data directory (UC volume)")  # noqa: F821
-dbutils.widgets.dropdown("command", "check", ["check", "refresh", "refresh --no-law", "index --full", "summarize-law", "status"], "Command")  # noqa: F821
+dbutils.widgets.dropdown("command", "check", ["check", "refresh", "refresh --no-law", "refresh --no-themes", "index --full", "themes", "summarize-law", "status", "eval", "eval --answers"], "Command")  # noqa: F821
 dbutils.widgets.text("embed_endpoint", "databricks-qwen3-embedding-0-6b", "Embedding endpoint")  # noqa: F821
 dbutils.widgets.text("chat_endpoint", "databricks-claude-sonnet-5-5", "Chat endpoint")  # noqa: F821
 dbutils.widgets.text("plural_policy_api_key_path", "", "3-part Unity Catalog path locating PLURAL_POLICY_API_KEY (optional)")  # noqa: F821
@@ -51,6 +51,10 @@ elif secret_path:
 from legistutor.cli import main
 
 arguments = ["--data-dir", dbutils.widgets.get("data_dir"), *dbutils.widgets.get("command").split()]  # noqa: F821
+if arguments[2] == "eval":
+    # The questions are in the repository; the results are kept in the volume, beside the data.
+    results_dir = dbutils.widgets.get("data_dir").rstrip("/") + "/eval_results"  # noqa: F821
+    arguments += ["--questions", os.path.abspath("../eval/questions.csv"), "--out", results_dir]
 status = main(arguments)
 if status:
     raise RuntimeError(f"legistutor {' '.join(arguments[2:])} finished with status {status}; see the output above")

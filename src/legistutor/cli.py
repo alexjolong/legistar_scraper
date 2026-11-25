@@ -83,6 +83,20 @@ def _build_parser() -> argparse.ArgumentParser:
     refresh.add_argument("--rps", type=float, default=5.0, help="max requests per second to Legistar (default: 5)")
     refresh.add_argument("--workers", type=int, default=4, help="concurrent fetch threads (default: 4)")
     refresh.add_argument("--no-law", action="store_true", help="leave statutes, session laws, bills and ordinances as they are")
+    refresh.add_argument("--no-themes", action="store_true", help="do not have the chat model file new matters under themes and storylines")
+
+    themes = sub.add_parser("themes", help="have the chat model file each matter under themes and a storyline, with a one-line gist")
+    themes.add_argument("--full", action="store_true", help="file every matter again, not only new or changed ones")
+    themes.add_argument("--limit", type=int, help="file at most N matters this run; the rest wait for the next")
+    themes.add_argument("--workers", type=int, help="requests to the model at once (default: 1 locally, 4 on Databricks, or LEGISTUTOR_TAG_WORKERS)")
+
+    evaluate = sub.add_parser("eval", help="run the evaluation questions through search (and answers) and score them")
+    evaluate.add_argument("--questions", type=Path, default=Path("eval/questions.csv"), help="the questions file (default: eval/questions.csv)")
+    evaluate.add_argument("--top", type=int, default=8, help="how many matters to retrieve per question (default: 8)")
+    evaluate.add_argument("--answers", action="store_true", help="also write an answer to each question and have a model check it against answer_facts")
+    evaluate.add_argument("--judge", help="chat model or endpoint that checks the answers (default: the one that writes them)")
+    evaluate.add_argument("--out", type=Path, default=Path("eval/results"), help="where each run is saved (default: eval/results)")
+    evaluate.add_argument("--compare", type=Path, help="an earlier run's JSON file, to list what changed since")
 
     check = sub.add_parser("check", help="try the models, the data directory and the outside sites, and say what is missing")
     check.add_argument("--no-sites", action="store_true", help="skip the outside sites the pipeline reads")
@@ -97,6 +111,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="address to listen on (default: 127.0.0.1, this machine only; 0.0.0.0 in a Databricks App)",
     )
     serve.add_argument("--no-browser", action="store_true", help="do not open the page in a browser")
+    serve.add_argument(
+        "--reload-seconds",
+        type=float,
+        default=float(os.environ.get("LEGISTUTOR_RELOAD_SECONDS") or 120),
+        help="how often to look for refreshed data and load it (default: 120, or LEGISTUTOR_RELOAD_SECONDS; 0 never looks)",
+    )
     return parser
 
 
@@ -256,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
             except RuntimeError as exc:
                 print(f"error: {exc}", file=sys.stderr)
         return 1 if check.run(args.data_dir, args.client, sites=not args.no_sites) else 0
-    if args.command in ("index", "search", "ask", "refresh", "serve", "summarize-law"):
+    if args.command in ("index", "search", "ask", "refresh", "serve", "summarize-law", "eval", "themes"):
         from .embed import EmbeddingError
         from .llm import LLMError
 
@@ -271,11 +291,16 @@ def main(argv: list[str] | None = None) -> int:
                 return _refresh(args)
             if args.command == "summarize-law":
                 return _summarize_law(args)
+            if args.command == "eval":
+                return _eval(args)
+            if args.command == "themes":
+                print(_themes_line(_themes(args, full=args.full, limit=args.limit, workers=args.workers)))
+                return 0
             if args.command == "serve":
                 from . import web
 
                 in_app = bool(os.environ.get("DATABRICKS_APP_PORT"))
-                web.serve(args.data_dir, args.client, port=args.port, host=args.host, open_browser=not (args.no_browser or in_app))
+                web.serve(args.data_dir, args.client, port=args.port, host=args.host, open_browser=not (args.no_browser or in_app), reload_seconds=args.reload_seconds)
                 return 0
             return _search(args) if args.command == "search" else _ask(args)
         except (EmbeddingError, LLMError, FileNotFoundError, RuntimeError) as exc:
@@ -291,9 +316,13 @@ def _check_model_host(args: argparse.Namespace) -> None:
     settings = config.settings()
     if settings.provider != "ollama":
         return
-    models = [settings.embed_model]
-    if args.command in ("ask", "summarize-law"):
+    models = [] if args.command == "themes" else [settings.embed_model]
+    if args.command == "themes" or (args.command == "refresh" and not args.no_themes):
+        models.append(settings.chat_model)
+    if args.command in ("ask", "summarize-law") or getattr(args, "answers", False):
         models.append(getattr(args, "model", None) or settings.chat_model)
+        if getattr(args, "judge", None):
+            models.append(args.judge)
     ollama.ensure_running(settings.ollama_host, models)
 
 
@@ -386,11 +415,66 @@ def _summarize_law(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _eval(args: argparse.Namespace) -> int:
+    from . import evaluate, llm, web
+
+    try:
+        questions = evaluate.read_questions(args.questions)
+    except evaluate.QuestionsError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    if not questions:
+        print(f"No questions in {args.questions} yet. docs/evaluation-set.md says how to write them.")
+        return 0
+    app = web.application(args.data_dir, args.client)
+    for problem in evaluate.unknown_items(app, questions):
+        print(f"warning: {problem}", file=sys.stderr)
+    settings = config.settings()
+    judge = llm.chat_model(settings, args.judge) if args.answers and args.judge else None
+    results = evaluate.run(app, questions, top=args.top, answers=args.answers, judge=judge, progress=print)
+    print()
+    print("\n".join(evaluate.summary(results)))
+    if args.compare:
+        print()
+        print("\n".join(evaluate.compare(results, args.compare)))
+    facts = {
+        "provider": settings.provider,
+        "embed_model": settings.embed_model,
+        "chat_model": settings.chat_model if args.answers else None,
+        "judge_model": (args.judge or settings.chat_model) if args.answers else None,
+        "top": args.top,
+        "questions": len(questions),
+    }
+    print(f"\nSaved to {evaluate.save(results, args.out, facts)}")
+    return 0
+
+
 def _index(args: argparse.Namespace, *, full: bool = False) -> dict:
     from . import gold
     from .embed import embedder
 
     return gold.build(args.data_dir, args.client, embedder(config.settings()), full=full)
+
+
+def _themes(args: argparse.Namespace, *, full: bool = False, limit: int | None = None, workers: int | None = None) -> dict:
+    from . import llm, themes
+
+    settings = config.settings()
+    return themes.tag(
+        args.data_dir, args.client, llm.chat_model(settings), full=full, limit=limit, workers=themes.worker_count(settings.provider, workers)
+    )
+
+
+def _themes_line(report: dict) -> str:
+    line = (
+        f"themes: {report['matters']} matters filed ({report['filed']} newly, {report['reused']} unchanged) by {report['model']}; "
+        f"{report['storylines']} storylines over {report['in_a_storyline']} matters"
+    )
+    if report["failed"]:
+        line += f"; {report['failed']} could not be filed and will be tried again next time"
+    if report["left_for_later"]:
+        line += f"; {report['left_for_later']} left for the next run"
+    return line
 
 
 def _refresh(args: argparse.Namespace) -> int:
@@ -416,6 +500,14 @@ def _refresh(args: argparse.Namespace) -> int:
     if "law" in index:
         law = index["law"]
         print(f"law index: {law['passages']} passages, {law['embedded']} newly embedded, {law['reused']} unchanged")
+    if not args.no_themes:
+        from .llm import LLMError
+
+        try:
+            print(_themes_line(_themes(args)))
+        except LLMError as exc:  # the record and its index are refreshed either way
+            print(f"themes: stopped ({exc}); what was filed is kept, and the rest is tried on the next refresh", file=sys.stderr)
+            ingest_status = 1
     return ingest_status
 
 

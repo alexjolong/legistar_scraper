@@ -3,151 +3,299 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>Legislative record</title>
 <style>
+  /* Colors follow the Hennepin County Design System (design/foundations/colors) and its data
+     visualization guide (2021). Tints are hex values, not opacity. tests/test_page_style.py checks
+     that every text color here reaches 4.5:1 on the backgrounds it is used on. */
   :root {
     color-scheme: light;
-    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.05);
-    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4;
-    --neutral-1: #898781; --neutral-2: #c3c2b7;
-    --warn-bg: #fff4d6; --warn-ink: #5c4300; --link: #1c5cab; --ins-bg: #d9f0e3; --del-ink: #a2332c;
+    --page: #f7f4f3;        /* 25% tint of warm gray #ded3ce */
+    --surface: #fcfcfc;     /* digital white */
+    --ink: #221d1d;         /* digital black */
+    --ink-2: #4f4846;       /* warm gray, darkened to read as text */
+    --muted: #625a57;       /* warm gray for chart axes and quiet text */
+    --grid: #e6e0dd;        /* rules between rows; not text */
+    --axis: #a49e99;        /* county neutral: axis lines and links between nodes */
+    --field: #625a57;       /* edges of inputs and buttons: 3:1 or more against the page */
+    --border: #ded3ce;      /* county neutral: card edges */
+    --wash: #efe9e6;        /* 50% tint of #ded3ce */
+    --header: #113c66;      /* deep blue */
+    --on-header: #fcfcfc;
+    --brand: #0058a4;       /* Hennepin blue: primary buttons */
+    --brand-hover: #113c66; /* deep blue */
+    --on-brand: #fcfcfc;
+    --heading: #113c66;
+    --link: #0058a4; --link-hover: #113c66; --visited: #3e1151;  /* rich purple */
+    --focus: #0058a4;
+    /* Categorical chart colors, in the guide's order. */
+    --series-1: #005aaa; --series-2: #6dcff6; --series-3: #113c66; --series-4: #f7931d; --series-5: #543079;
+    --neutral-1: #a49e99; --neutral-2: #dfe0de;
+    --warn-bg: #fff2c1; --warn-edge: #f7931d;     /* 25% tint of golden yellow #ffcb05; golden orange */
+    --error-bg: #f3c4cc; --error-edge: #ce1432; --error-ink: #ce1432;  /* warm red and its 25% tint */
+    --info-bg: #c6e8fb; --info-edge: #0058a4;
+    --ins-bg: #e7f2ce;                            /* 25% tint of green #9fcc3b */
+    /* Sequential blues, light to dark: how many matters a theme had in a month. */
+    --heat-1: #c6e8fb; --heat-2: #88bfe7; --heat-3: #4895c8; --heat-4: #22689a; --heat-5: #113c66;
+    --small: 0.875rem;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
-      --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
-      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.06);
-      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181;
-      --neutral-1: #898781; --neutral-2: #52514e;
-      --warn-bg: #3a2f10; --warn-ink: #f3dc9a; --link: #86b6ef; --ins-bg: #173d2b; --del-ink: #f08b82;
+      --page: #1b1818; --surface: #242020; --ink: #f2efee; --ink-2: #d2cbc8; --muted: #b3aba7;
+      --grid: #353030; --axis: #6e6663; --field: #a49e99; --border: #3d3736; --wash: #302a2a;
+      --header: #113c66; --on-header: #fcfcfc;
+      --brand: #88bfe7; --brand-hover: #c6e8fb; --on-brand: #221d1d; --heading: #c6e8fb;
+      --link: #88bfe7; --link-hover: #c6e8fb; --visited: #bfa2cd; --focus: #88bfe7;
+      --series-1: #4895c8; --series-2: #6dcff6; --series-3: #22689a; --series-4: #f7931d; --series-5: #9e76b4;
+      --neutral-1: #8a8380; --neutral-2: #4a4442;
+      --warn-bg: #3d3317; --warn-edge: #f7931d;
+      --error-bg: #4a1520; --error-edge: #ef413d; --error-ink: #ff8f8a;
+      --info-bg: #13304d; --info-edge: #88bfe7;
+      --ins-bg: #2b3a1a;
+      --heat-1: #113c66; --heat-2: #22689a; --heat-3: #4895c8; --heat-4: #88bfe7; --heat-5: #c6e8fb;  /* on a dark page, more is brighter */
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  html { font-size: 100%; }
+  /* Myriad Pro is the county typeface; Segoe UI is its stand-in on county computers. */
+  body { margin: 0; background: var(--page); color: var(--ink); font: 1rem/1.5 "Myriad Pro", "Segoe UI", system-ui, -apple-system, sans-serif;
          display: flex; height: 100vh; overflow: hidden; }
   #app { flex: 1 1 0; min-width: 0; overflow-y: auto; }
-  a { color: var(--link); }
+  a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:visited { color: var(--visited); }
+  a:hover { color: var(--link-hover); text-decoration-thickness: 2px; }
   button, input, select { font: inherit; color: inherit; }
-  header { padding: 20px 24px 0; max-width: 1100px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 0; font-weight: 650; }
-  h2 { font-size: 16px; margin: 0 0 8px; font-weight: 650; }
-  h3 { font-size: 13px; margin: 18px 0 6px; font-weight: 650; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
-  .sub { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
-  nav { display: flex; gap: 4px; margin-top: 14px; border-bottom: 1px solid var(--grid); }
-  nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--ink-2); }
-  nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--series-1); font-weight: 600; }
+  :focus-visible, svg [tabindex]:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .skip { position: absolute; left: 8px; top: -100px; z-index: 30; background: var(--surface); color: var(--link); padding: 8px 12px; border-radius: 4px; }
+  .skip:focus { top: 8px; }
+
+  /* Program-name header: county logo and the name of the tool, on deep blue. */
+  .band { background: var(--header); color: var(--on-header); }
+  .band .inner { max-width: 1100px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+  .band svg { height: 40px; width: auto; flex: none; fill: currentColor; }
+  .band h1 { font-size: 1.75rem; line-height: 1.2; margin: 0; font-weight: 400; }
+  .top { max-width: 1100px; margin: 0 auto; padding: 12px 24px 0; }
+  h2 { font-size: 1.75rem; line-height: 1.2; margin: 0 0 8px; font-weight: 400; color: var(--heading); }
+  #drawer h2 { font-size: 1.5rem; }
+  h3 { font-size: 1.0625rem; margin: 20px 0 6px; font-weight: 600; }
+  .sub { color: var(--ink-2); margin-top: 2px; max-width: 80ch; }
+  nav.sections ul { display: flex; flex-wrap: wrap; gap: 4px; margin: 14px 0 0; padding: 0; list-style: none; border-bottom: 1px solid var(--border); }
+  nav.sections a { display: block; padding: 10px 14px; color: var(--ink-2); text-decoration: none; border-bottom: 3px solid transparent; font-size: 1.125rem; }
+  nav.sections a:hover { color: var(--ink); border-bottom-color: var(--axis); }
+  nav.sections a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--brand); font-weight: 600; }
   main { max-width: 1100px; margin: 0 auto; padding: 16px 24px 80px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
-  form.ask { display: flex; gap: 8px; flex-wrap: wrap; }
-  form.ask input[type=text] { flex: 1 1 380px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--axis); background: var(--surface); }
-  .btn { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--axis); background: var(--surface); cursor: pointer; }
-  .btn.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; font-weight: 600; }
-  .btn:disabled { opacity: .5; cursor: default; }
-  .btn.small { padding: 4px 10px; font-size: 13px; }
-  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; color: var(--ink-2); align-items: center; }
-  .filters label { display: flex; gap: 5px; align-items: center; }
-  .filters select, .filters input { padding: 4px 6px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface); max-width: 210px; }
-  .examples { margin-top: 10px; font-size: 13px; color: var(--ink-2); }
-  .examples button { background: none; border: 0; color: var(--link); cursor: pointer; padding: 0 6px 0 0; text-decoration: underline; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+
+  /* Forms: a visible label above each field, help text between the label and the field. */
+  .field-label { display: block; font-weight: 600; }
+  .hint { color: var(--ink-2); font-size: var(--small); margin: 2px 0 6px; max-width: 80ch; }
+  form.ask { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
+  form.ask input[type=text] { flex: 1 1 380px; min-width: 0; min-height: 2.5rem; padding: 8px 12px; border-radius: 4px; border: 2px solid var(--field); background: var(--surface); }
+  .btn { min-height: 2.5rem; padding: 6px 16px; border-radius: 4px; border: 2px solid var(--field); background: var(--surface); cursor: pointer; }
+  .btn:hover { border-color: var(--brand-hover); }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); font-weight: 600; }
+  .btn.primary:hover { background: var(--brand-hover); border-color: var(--brand-hover); }
+  .btn[aria-disabled="true"] { opacity: .55; cursor: default; }
+  .btn.small { min-height: 2rem; padding: 2px 12px; font-size: var(--small); border-width: 1px; }
+  .filters { display: flex; gap: 12px 16px; flex-wrap: wrap; margin-top: 14px; align-items: flex-end; }
+  .filters label { display: flex; flex-direction: column; gap: 2px; font-size: var(--small); font-weight: 600; }
+  .filters label.check { flex-direction: row; align-items: center; gap: 6px; min-height: 2.25rem; font-weight: 400; font-size: 1rem; }
+  .filters select, .filters input:not([type=checkbox]) { min-height: 2.25rem; padding: 4px 8px; border-radius: 4px; border: 2px solid var(--field); background: var(--surface); max-width: min(100%, 26rem); font-weight: 400; font-size: 1rem; }
+  .filters input[type=checkbox] { width: 1.25rem; height: 1.25rem; accent-color: var(--brand); }
+  .examples { margin-top: 12px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 16px; }
+
+  /* Alerts: an icon and words as well as color. */
+  .alert { display: flex; gap: 10px; align-items: flex-start; border-left: 5px solid var(--warn-edge); background: var(--warn-bg); color: var(--ink);
+           border-radius: 4px; padding: 10px 14px; margin-top: 10px; }
+  .alert::before { content: "!"; flex: none; display: inline-grid; place-items: center; width: 1.375rem; height: 1.375rem; margin-top: 1px; border-radius: 50%;
+                   font-weight: 700; font-size: var(--small); background: var(--warn-edge); color: #221d1d; }
+  .alert.error { border-left-color: var(--error-edge); background: var(--error-bg); }
+  .alert.error::before { content: "×"; background: var(--error-edge); color: #fcfcfc; }
+  .alert.info { border-left-color: var(--info-edge); background: var(--info-bg); }
+  .alert.info::before { content: "i"; background: var(--info-edge); color: var(--on-brand); }
+  .alert ul { margin: 4px 0 0; padding-left: 20px; }
+  .alert > div { min-width: 0; }
+
   #answer p { margin: 0 0 10px; } #answer ul { margin: 0 0 10px; padding-left: 22px; }
-  .cite { border: 1px solid var(--axis); background: var(--wash); border-radius: 5px; font-size: 12px; padding: 0 4px; margin: 0 1px; cursor: pointer; vertical-align: 1px; }
-  .note { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
-  .warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-top: 10px; }
-  .warn ul { margin: 4px 0 0; padding-left: 20px; }
-  .error { color: #d03b3b; font-weight: 600; }
-  .hit { display: grid; grid-template-columns: 34px 1fr auto; gap: 4px 10px; padding: 12px 0; border-top: 1px solid var(--grid); }
+  .cite { min-width: 1.5rem; min-height: 1.5rem; border: 1px solid var(--field); background: var(--wash); border-radius: 4px; font-size: var(--small); padding: 0 5px; margin: 0 1px; cursor: pointer; vertical-align: 1px; }
+  .note { font-size: var(--small); color: var(--ink-2); margin-top: 8px; }
+  .hit { display: grid; grid-template-columns: 40px 1fr auto; gap: 4px 12px; padding: 14px 0; border-top: 1px solid var(--grid); }
   .hit:first-of-type { border-top: 0; }
   .hit .n { color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .hit .title { font-weight: 600; }
   .hit.flash { background: var(--wash); }
-  .meta { font-size: 13px; color: var(--ink-2); }
-  .excerpt { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
-  .pill { display: inline-block; border: 1px solid var(--axis); border-radius: 999px; padding: 0 8px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
-  .filelink { font-weight: 650; background: none; border: 0; padding: 0; cursor: pointer; color: var(--link); text-decoration: underline; }
+  .meta { font-size: var(--small); color: var(--ink-2); }
+  .excerpt { font-size: var(--small); color: var(--ink-2); margin-top: 4px; max-width: 90ch; }
+  .pill { display: inline-block; border: 1px solid var(--field); border-radius: 999px; padding: 0 10px; font-size: var(--small); color: var(--ink-2); white-space: nowrap; }
+  .pill.alert-pill { background: var(--warn-bg); color: var(--ink); border-color: var(--warn-edge); }
+  .filelink { font-weight: 600; }
   /* Details open beside the page, not over it. Drag the divider (or focus it and use the arrow keys) to resize. */
   #drawer { display: none; flex: 0 0 var(--drawer-w, 56vw); min-width: 0; overflow-y: auto; background: var(--page); padding: 8px 20px 60px; }
+  #drawer:focus { outline: none; }
   #divider { display: none; flex: 0 0 9px; cursor: col-resize; background: var(--grid); border-left: 1px solid var(--axis); border-right: 1px solid var(--axis); touch-action: none; }
-  #divider:hover, #divider:focus-visible, #divider.dragging { background: var(--series-1); outline: none; }
+  #divider:hover, #divider:focus-visible, #divider.dragging { background: var(--brand); outline: none; }
   body.split #drawer, body.split #divider { display: block; }
   body.dragging { user-select: none; cursor: col-resize; }
-  @media (max-width: 900px) {  /* too narrow to share: the details pane covers the page */
+  @media (max-width: 1023px) {  /* too narrow to share: the details pane covers the page */
     body.split #drawer { position: fixed; inset: 0; z-index: 5; }
     body.split #divider { display: none; }
   }
+  @media (max-width: 639px) {
+    .band .inner, .top, main { padding-left: 12px; padding-right: 12px; }
+    .band h1 { font-size: 1.375rem; }
+    .card { padding: 14px; }
+  }
   .drawerbar { display: flex; gap: 8px; margin-bottom: 12px; position: sticky; top: -8px; background: var(--page); padding: 8px 0; z-index: 2; }
   .chart { overflow-x: auto; }
-  svg text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink-2); }
+  /* Chart text is 16px, the design system's minimum for charts; axis labels are warm gray. */
+  svg text { font: 1rem "Myriad Pro", "Segoe UI", system-ui, -apple-system, sans-serif; fill: var(--ink); }
   svg .strong { fill: var(--ink); font-weight: 600; }
   svg .halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }  /* keeps a label legible where a line passes behind it */
   svg .muted { fill: var(--muted); }
   svg .hitarea { fill: transparent; cursor: pointer; }
-  svg [tabindex]:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
-  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+  .legend { display: flex; gap: 8px 18px; flex-wrap: wrap; color: var(--ink-2); margin-bottom: 8px; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-  table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
-  th { color: var(--ink-2); font-weight: 600; }
+  .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  thead th { color: var(--ink-2); font-weight: 600; border-bottom: 2px solid var(--border); font-size: var(--small); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  details { margin-top: 8px; } summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
-  .text { white-space: pre-wrap; font-size: 14px; margin: 8px 0 0; }
-  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); padding: 7px 10px; border-radius: 7px; font-size: 12.5px;
-         max-width: 340px; z-index: 20; display: none; line-height: 1.4; }
-  #tip b { display: block; font-size: 13.5px; }
-  .pill.alert { background: var(--warn-bg); color: var(--warn-ink); border-color: transparent; }
+  td.nowrap { white-space: nowrap; }
+  .tablewrap { overflow-x: auto; }
+  details { margin-top: 10px; } summary { cursor: pointer; color: var(--link); }
+  summary:hover { text-decoration: underline; }
+  .download { margin: 8px 0 0; font-size: var(--small); }
+  .text { white-space: pre-wrap; margin: 8px 0 0; max-width: 90ch; }
+  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); padding: 8px 12px; border-radius: 6px; font-size: var(--small);
+         max-width: 360px; z-index: 20; display: none; line-height: 1.4; }
+  #tip b { display: block; font-size: 1rem; }
   ins { background: var(--ins-bg); text-decoration: underline; text-decoration-thickness: 1px; }
-  del { color: var(--del-ink); text-decoration: line-through; }
+  del { color: var(--ink-2); text-decoration: line-through; }
   .subd { border-top: 1px solid var(--grid); padding: 8px 0 4px; margin-top: 0; }
-  .subd > summary { color: var(--ink); font-size: 14px; }
-  .subd .preview { color: var(--muted); margin-left: 6px; font-size: 13px; }
+  .subd > summary { color: var(--ink); }
+  .subd .preview { color: var(--ink-2); margin-left: 6px; font-size: var(--small); }
   .subd[open] .preview { display: none; }
   .reading p { margin: 0 0 8px; } .reading ul { margin: 0 0 8px; padding-left: 22px; }
   .cardhead { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-  .subd.focus { background: var(--wash); border-left: 3px solid var(--series-1); padding-left: 10px; }
-  form.ask input[type=text] { min-width: 0; }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
-  code { background: var(--wash); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .subd.focus { background: var(--wash); border-left: 4px solid var(--brand); padding-left: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  code { background: var(--wash); padding: 1px 5px; border-radius: 4px; font-size: 0.9375rem; }
   .hidden { display: none !important; }
+  .gist { font-weight: 600; }
+  a.pill { text-decoration: none; background: var(--wash); color: var(--ink); }
+  a.pill:hover { border-color: var(--brand); text-decoration: underline; }
+  .choices { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 12px 0 6px; }
+  .choices .btn[aria-pressed="true"] { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); font-weight: 600; }
+  .ramp { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .ramp i { width: 18px; height: 14px; border-radius: 2px; display: inline-block; }
+  .digest .row { display: grid; grid-template-columns: 96px 1fr auto; gap: 2px 12px; padding: 8px 0; border-top: 1px solid var(--grid); }
+  .digest h3 a { color: inherit; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <div id="app">
-<header>
-  <h1 id="heading">Legislative record</h1>
-  <div class="sub" id="metaLine">Loading…</div>
-  <nav role="tablist">
-    <button role="tab" id="tabAsk" aria-selected="true">Ask and search</button>
-    <button role="tab" id="tabQueues" aria-selected="false">Coming up</button>
-    <button role="tab" id="tabLaw" aria-selected="false">Law</button>
-  </nav>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="band">
+  <div class="inner">
+    <!-- Hennepin County promotional logo (design system: design/foundations/logos), reversed for the deep blue band. -->
+    <svg id="logo" class="hidden" role="img" aria-label="Hennepin County" viewBox="0 0 266.22 82.69" xmlns="http://www.w3.org/2000/svg">
+      <path d="M84.43,33.86V.16h4.57v14.5h16.69V.16h4.57v33.7h-4.57v-14.96h-16.69v14.96h-4.57Z"/>
+      <path d="M113.75,22.49c0-7.13,4.52-12.07,11.14-12.07s10.72,4.47,10.72,11.23v1.63l-17.62.05c.33,4.8,2.84,7.46,7.18,7.46,3.4,0,5.64-1.4,6.39-4.01h4.1c-1.12,4.89-4.94,7.64-10.58,7.64-6.71,0-11.33-4.85-11.33-11.93ZM118.09,20.39h13.14c0-3.78-2.47-6.29-6.34-6.29s-6.25,2.28-6.81,6.29Z"/>
+      <path d="M138.41,33.86V11.07h3.96l.47,3.5c1.44-2.61,4.33-4.15,7.55-4.15,6.01,0,8.76,3.68,8.76,9.51v13.94h-4.38v-12.96c0-4.61-2.14-6.48-5.5-6.48-4.1,0-6.48,2.94-6.48,7.36v12.07h-4.38Z"/>
+      <path d="M163.11,33.86V11.07h3.96l.47,3.5c1.45-2.61,4.34-4.15,7.55-4.15,6.01,0,8.76,3.68,8.76,9.51v13.94h-4.38v-12.96c0-4.61-2.14-6.48-5.5-6.48-4.1,0-6.48,2.94-6.48,7.36v12.07h-4.38Z"/>
+      <path d="M186.33,22.49c0-7.13,4.52-12.07,11.14-12.07s10.72,4.47,10.72,11.23v1.63l-17.62.05c.33,4.8,2.84,7.46,7.18,7.46,3.4,0,5.64-1.4,6.39-4.01h4.1c-1.12,4.89-4.94,7.64-10.58,7.64-6.71,0-11.33-4.85-11.33-11.93ZM190.66,20.39h13.14c0-3.78-2.47-6.29-6.34-6.29s-6.25,2.28-6.81,6.29Z"/>
+      <path d="M210.99,11.07h3.96l.33,4.1c1.54-3.12,4.61-4.75,8.25-4.75,6.52,0,10.58,4.89,10.58,11.89s-3.82,12.17-10.58,12.17c-3.64,0-6.67-1.54-8.16-4.33v13.94h-4.38V11.07ZM222.59,30.5c4.47,0,7.13-3.36,7.13-8.02s-2.66-8.06-7.13-8.06-7.18,3.31-7.18,8.06,2.7,8.02,7.18,8.02Z"/>
+      <path d="M236.11,2.77c0-1.63,1.3-2.89,2.89-2.89s2.89,1.26,2.89,2.89-1.3,2.89-2.89,2.89-2.89-1.3-2.89-2.89ZM236.86,11.07h4.38v22.79h-4.38V11.07Z"/>
+      <path d="M245.48,33.86V11.07h3.96l.47,3.5c1.44-2.61,4.33-4.15,7.55-4.15,6.01,0,8.76,3.68,8.76,9.51v13.94h-4.38v-12.96c0-4.61-2.14-6.48-5.5-6.48-4.1,0-6.48,2.94-6.48,7.36v12.07h-4.38Z"/>
+      <path d="M82.43,55.46c0-10.39,6.57-17.43,16.22-17.43,7.6,0,13.42,4.52,14.68,11.42h-4.89c-1.26-4.38-5.03-7.04-9.93-7.04-6.8,0-11.28,5.13-11.28,13s4.47,13,11.28,13c4.94,0,8.86-2.66,10.11-6.8h4.85c-1.44,6.71-7.46,11.19-15.06,11.19-9.6,0-15.99-6.9-15.99-17.34Z"/>
+      <path d="M126.62,48.88c6.81,0,11.84,4.94,11.84,11.98s-5.03,11.98-11.84,11.98-11.89-4.94-11.89-11.98,5.03-11.98,11.89-11.98ZM126.62,68.93c4.38,0,7.46-3.31,7.46-8.06s-3.08-8.06-7.46-8.06-7.46,3.31-7.46,8.06,3.03,8.06,7.46,8.06Z"/>
+      <path d="M160.74,49.49v22.79h-3.92l-.47-3.45c-1.3,2.38-4.33,4.01-7.69,4.01-5.31,0-8.3-3.59-8.3-9.18v-14.17h4.38v12.72c0,4.89,2.1,6.76,5.45,6.76,4.01,0,6.2-2.56,6.2-7.46v-12.03h4.33Z"/>
+      <path d="M164.98,72.28v-22.79h3.96l.47,3.5c1.45-2.61,4.34-4.15,7.55-4.15,6.01,0,8.76,3.68,8.76,9.51v13.94h-4.38v-12.96c0-4.61-2.14-6.48-5.5-6.48-4.1,0-6.48,2.94-6.48,7.36v12.07h-4.38Z"/>
+      <path d="M191.74,72.28v-19.11h-4.47v-3.68h4.47v-7.13h4.38v7.13h4.47v3.68h-4.47v19.11h-4.38Z"/>
+      <path d="M202.08,78.9h2.94c2.1,0,3.78-.33,4.85-3.22l.79-2.19-9.18-24h4.61l6.62,18.36,6.76-18.36h4.52l-10.77,27.92c-1.54,3.91-3.82,5.55-7.32,5.55-1.44,0-2.66-.19-3.82-.47v-3.59Z"/>
+      <path d="M69.05,3.38v65.4H3.65V3.38h65.4M72.7-.27H0v72.7h72.7V-.27h0Z"/>
+      <path d="M44.42,19.11c.67,1.29,1.01,2.92,1.01,4.38v7.93h-18.15v-8.99h.03c.1-1.06.37-2.07.82-3.02.68-1.44,1.73-2.67,3.02-3.57v-2.52H13.69v45.5h13.59v-15.14h18.15v15.14h13.59V13.33h-17.48v2.51c1.2.84,2.2,1.97,2.88,3.27Z"/>
+    </svg>
+    <h1 id="heading">Legislative record</h1>
+  </div>
 </header>
-<main>
-  <section id="viewAsk">
+<div class="top">
+  <div id="loadError"></div>
+  <nav class="sections" aria-label="Sections">
+    <ul>
+      <li><a href="#explore" id="tabExplore">Explore</a></li>
+      <li><a href="#ask" id="tabAsk" aria-current="page">Ask and search</a></li>
+      <li><a href="#coming-up" id="tabQueues">Coming up</a></li>
+      <li><a href="#law" id="tabLaw">Law</a></li>
+    </ul>
+  </nav>
+</div>
+<div id="announce" class="sr-only" role="status" aria-live="polite"></div>
+<main id="main" tabindex="-1">
+  <section id="viewExplore" class="hidden" aria-labelledby="exploreHead">
+    <div class="card hidden" id="exploreMissing">
+      <h2>Nothing has been filed under themes yet</h2>
+      <div class="sub">Run <code>legistutor themes</code>, or wait for the next <code>legistutor refresh</code>. The chat model reads each matter once and files it under themes and storylines. This page then loads the result on its own.</div>
+    </div>
+    <div id="exploreBody">
     <div class="card">
+      <h2 id="exploreHead">What the board has been working on</h2>
+      <div class="sub" id="exploreSub">Loading…</div>
+      <div class="legend" id="exploreLegend" style="margin-top:10px"></div>
+      <div class="chart" id="themeGrid"></div>
+      <details><summary>Show as a table</summary><div id="themeTable"></div></details>
+    </div>
+    <div class="card hidden" id="themeCard">
+      <div class="cardhead"><h2 id="themeTitle" tabindex="-1"></h2><span class="meta" id="themeArea"></span></div>
+      <div class="sub" id="themeSub"></div>
+      <h3 id="storyHead">Storylines</h3>
+      <div class="sub" id="storySub"></div>
+      <div class="chart" id="storyChart" style="margin-top:6px"></div>
+      <div id="storyMore"></div>
+      <h3>Matters</h3>
+      <div class="choices" id="themeChoices"></div>
+      <div id="themeItems"></div>
+    </div>
+    <div class="card">
+      <h2>By meeting</h2>
+      <div class="sub">Matters from a single meeting, sorted by primary theme.</div>
+      <div class="filters"><label for="meetingPick">Meeting <select id="meetingPick" style="max-width:520px"></select></label> <span id="meetingLink"></span></div>
+      <div class="digest" id="meetingItems" style="margin-top:8px"></div>
+    </div>
+    </div>
+  </section>
+  <section id="viewAsk" aria-labelledby="askHead">
+    <div class="card">
+      <h2 id="askHead" class="sr-only">Ask and search</h2>
+      <label class="field-label" for="q">Search by topic, question, or reference number</label>
+      <p class="hint" id="qHint">Matters related to your search appear first. "Ask" uses an AI model to read those documents and generate an answer. "Chart over time" retrieves matters that contain every word from your search.</p>
       <form class="ask" id="askForm">
-        <input type="text" id="q" placeholder="Ask about a topic, or type a file number such as 26-0333" autocomplete="off" aria-label="Question">
+        <input type="text" id="q" autocomplete="off" aria-describedby="qHint">
         <button class="btn primary" id="askBtn" type="submit">Ask</button>
-        <button class="btn" id="searchBtn" type="button">Search only</button>
-        <button class="btn" id="topicBtn" type="button" title="Count the matters that contain every word, by quarter and department">Topic over time</button>
+        <button class="btn" id="searchBtn" type="button">Search</button>
+        <button class="btn" id="topicBtn" type="button">Chart over time</button>
       </form>
       <div class="filters">
         <label>Acted on since <input type="date" id="fSince"></label>
-        <label>Body <select id="fBody"><option value="">any</option></select></label>
-        <label>Department <select id="fDepartment"><option value="">any</option></select></label>
-        <label>Type <select id="fType"><option value="">any</option></select></label>
-        <label>Status <select id="fStatus"><option value="">any</option></select></label>
-        <label>Sources <select id="fTop"><option>5</option><option selected>8</option><option>12</option></select></label>
+        <label>Board or committee <select id="fBody"><option value="">Any</option></select></label>
+        <label>Department <select id="fDepartment"><option value="">Any</option></select></label>
+        <label>Type <select id="fType"><option value="">Any</option></select></label>
+        <label>Status <select id="fStatus"><option value="">Any</option></select></label>
+        <label>Sources to read <select id="fTop"><option>5</option><option selected>8</option><option>12</option></select></label>
       </div>
-      <div class="examples" id="examples">Try:</div>
+      <div class="examples" id="examples"><span>Examples:</span></div>
     </div>
     <div class="card hidden" id="answerCard">
       <h2>Answer</h2>
-      <div id="answer"></div>
+      <div id="answer" aria-live="off"></div>
       <div id="answerFoot"></div>
     </div>
     <div class="card hidden" id="topicCard">
-      <h2 id="topicTitle">Topic over time</h2>
+      <h2 id="topicTitle">Chart over time</h2>
       <div class="sub" id="topicSub"></div>
       <div id="topicChart" style="margin-top:10px"></div>
       <div id="topicTable"></div>
@@ -163,10 +311,10 @@
       <div id="lawHits"></div>
     </div>
   </section>
-  <section id="viewQueues" class="hidden">
+  <section id="viewQueues" class="hidden" aria-labelledby="queuesHead">
     <div class="card">
-      <h2>Coming up, by body</h2>
-      <div class="sub">An item is listed for a body when a draft board agenda places it under a "Referred to …" heading, or when a recorded action referred or returned it there and it has not been on an agenda since. Select a bar to jump to its list.</div>
+      <h2 id="queuesHead">Coming up, by board or committee</h2>
+      <div class="sub">A matter is listed for a board or committee when a draft board agenda places it under a "Referred to …" heading, or when a recorded action referred or returned it there and it has not been on an agenda since. Select a bar to go to its list.</div>
       <div class="chart" id="queueChart" style="margin-top:10px"></div>
     </div>
     <div id="queueLists"></div>
@@ -175,20 +323,20 @@
       <div id="meetings"></div>
     </div>
   </section>
-  <section id="viewLaw" class="hidden">
+  <section id="viewLaw" class="hidden" aria-labelledby="lawHead">
     <div class="card hidden" id="lawMissing">
       <h2>No law has been fetched yet</h2>
-      <div class="sub">Run <code>legistutor ingest-law</code>, then <code>legistutor build</code> and <code>legistutor index</code>, and restart this page.</div>
+      <div class="sub">Run <code>legistutor ingest-law</code>, then <code>legistutor build</code> and <code>legistutor index</code>. Then restart this page.</div>
     </div>
     <div id="lawBody">
     <div class="card">
-      <h2>What each session changed under the record</h2>
+      <h2 id="lawHead">What each legislative session changed in the law the record cites</h2>
       <div class="sub" id="lawSub"></div>
       <div class="filters">
         <label>Session <select id="lawYear"></select></label>
         <label>Show <select id="lawScope">
-          <option value="cited">sections the record or an ordinance cites</option>
-          <option value="all">every section in the chapters fetched</option>
+          <option value="cited">Sections the record or an ordinance cites</option>
+          <option value="all">Every section in the chapters fetched</option>
         </select></label>
       </div>
       <div id="lawChart" style="margin-top:10px"></div>
@@ -196,24 +344,25 @@
     </div>
     <div class="card">
       <h2 id="lawCheckTitle">Citations to check</h2>
-      <div class="sub">Items in the record that cite a statute section which is repealed, renumbered, or not in Minnesota Statutes as published. Some will be slips of the pen; some may rest on law that is gone.</div>
+      <div class="sub">Matters in the record that cite a statute section that is repealed, renumbered, or not in Minnesota Statutes as published. Some are typing mistakes. Some may rest on law that no longer exists.</div>
       <div id="lawCheck" style="margin-top:8px"></div>
     </div>
     <div class="card">
       <h2 id="lawOrdTitle">County ordinances</h2>
-      <div class="sub">As published on the county's website. Select one for its text, the statutes it cites, and the items that cite it.</div>
+      <div class="sub">As published on the county's website. Select one for its text, the statutes it cites, and the matters that cite it.</div>
       <div id="lawOrdinances" style="margin-top:8px"></div>
     </div>
     <div class="card">
       <h2>State bills</h2>
       <div class="sub" id="billSub"></div>
-      <form class="ask" id="billForm" style="margin-top:10px">
-        <input type="text" id="billQ" placeholder="Words in the bill's title or subject" autocomplete="off" aria-label="Words in the bill's title or subject">
+      <label class="field-label" for="billQ" style="margin-top:12px">Words in the bill's title or subject</label>
+      <form class="ask" id="billForm" style="margin-top:4px">
+        <input type="text" id="billQ" autocomplete="off">
         <button class="btn" type="submit">Find bills</button>
       </form>
       <div class="filters">
-        <label>Session <select id="billSession"><option value="">any</option></select></label>
-        <label><input type="checkbox" id="billEnacted"> became law</label>
+        <label>Session <select id="billSession"><option value="">Any</option></select></label>
+        <label class="check"><input type="checkbox" id="billEnacted"> Became law</label>
       </div>
       <div id="billTable" style="margin-top:8px"></div>
     </div>
@@ -221,11 +370,12 @@
   </section>
 </main>
 </div>
-<div id="divider" role="separator" aria-orientation="vertical" aria-label="Resize the details pane" tabindex="0"></div>
-<aside id="drawer" aria-label="Details">
+<div id="divider" role="separator" aria-orientation="vertical" aria-label="Resize the details pane. Use the left and right arrow keys." tabindex="0"
+     aria-valuemin="0" aria-valuemax="100" aria-valuenow="56"></div>
+<aside id="drawer" aria-label="Details" tabindex="-1">
   <div class="drawerbar">
-    <button class="btn small" id="drawerBack">← Back</button>
-    <button class="btn small" id="drawerClose">Close</button>
+    <button class="btn small" id="drawerBack" type="button"><span aria-hidden="true">← </span>Back</button>
+    <button class="btn small" id="drawerClose" type="button">Close</button>
   </div>
   <div id="drawerBody"></div>
 </aside>
@@ -235,7 +385,9 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const SVG = "http://www.w3.org/2000/svg";
-const SERIES = ["var(--series-1)", "var(--series-2)", "var(--series-3)"];
+// Three colors from the county's categorical chart palette that stay apart even as small dots:
+// blue, orange and purple. Charts with more categories use the palette in its own order.
+const SERIES = ["var(--series-1)", "var(--series-4)", "var(--series-5)"];
 const TYPE_COLOR = { matter: SERIES[0], body: SERIES[1], department: SERIES[1], statute: SERIES[2], subdivision: SERIES[2],
                      session_law: SERIES[2], ordinance: SERIES[2], bill: SERIES[2] };
 
@@ -265,7 +417,52 @@ async function api(path, params) {
   return data;
 }
 const clip = (text, n) => { text = (text || "").replace(/\s+/g, " ").trim(); return text.length > n ? text.slice(0, n - 1).trimEnd() + "…" : text; };
-const fmtDate = (iso) => iso ? new Date(iso + "T00:00:00").toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+// County style: the month spelled out, as in November 5, 2026.
+const fmtDate = (iso) => iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "";
+const cap = (text) => text ? text.charAt(0).toUpperCase() + text.slice(1) : text;  // sentence case for labels built from data
+const MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+const announce = (text) => { $("announce").textContent = ""; setTimeout(() => ($("announce").textContent = text), 50); };
+
+// Links that open in the details pane are real links: they carry the deep-link address, so
+// they can be opened in a new tab or copied, and a plain click opens the pane instead.
+const follow = (action) => (event) => {
+  if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  action();
+};
+const here = (params) => "?" + new URLSearchParams(params);
+const matterLink = (fileNumber, ref, attrs) => el("a", { class: "filelink", href: here({ open: fileNumber }), onclick: follow(() => openMatter(ref || { file: fileNumber })), ...attrs }, fileNumber);
+const nodeLink = (id, label, attrs) => el("a", { href: here({ node: id }), onclick: follow(() => openNode(id)), ...attrs }, label);
+const newTab = () => el("span", { class: "sr-only" }, " (opens in a new tab)");
+const outLink = (url, label, attrs) => url ? el("a", { href: url, target: "_blank", rel: "noopener", ...attrs }, label, newTab()) : null;
+
+// A data table: a caption (hidden when a heading above already names it), a header row with scope, a body.
+function table(caption, head, rows, { showCaption = false } = {}) {
+  return el("div", { class: "tablewrap" }, el("table", {},
+    el("caption", { class: showCaption ? "" : "sr-only" }, caption),
+    el("thead", {}, el("tr", {}, head.map((h) => {
+      const th = h instanceof Node ? h : el("th", {}, h);
+      th.setAttribute("scope", "col");
+      return th;
+    }))),
+    el("tbody", {}, rows)));
+}
+const numTh = (text) => el("th", { class: "num" }, text);
+
+// Every chart's numbers are also a table and a CSV file (design system: charts, graphs and infographics).
+function csvLink(filename, head, rows) {
+  const quote = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const text = [head, ...rows].map((row) => row.map(quote).join(",")).join("\r\n");
+  const bom = String.fromCharCode(0xfeff);  // so Excel reads the file as UTF-8
+  const url = URL.createObjectURL(new Blob([bom + text], { type: "text/csv;charset=utf-8" }));
+  return el("p", { class: "download" }, el("a", { href: url, download: filename }, `Download (${filename})`));
+}
+function chartData(caption, head, rows, filename, numeric) {
+  const isNum = (i) => (numeric || []).includes(i);
+  return el("details", {}, el("summary", {}, "Show as a table"),
+    table(caption, head.map((h, i) => isNum(i) ? numTh(h) : h), rows.map((row) => el("tr", {}, row.map((v, i) => el("td", { class: isNum(i) ? "num" : null }, v == null ? "" : String(v)))))),
+    csvLink(filename, head, rows));
+}
 
 // --- tooltip: the same content on hover and on keyboard focus ---------------------
 const tip = $("tip");
@@ -279,6 +476,16 @@ function showTip(target, title, lines, event) {
   tip.style.top = Math.min(y, innerHeight - tip.offsetHeight - 8) + "px";
 }
 function withTip(node, title, lines) {
+  // The tooltip's words are also the mark's accessible name, so a screen reader hears what a sighted user sees.
+  // It starts with the words the mark shows, so speech users can say what they see (WCAG 2.5.3).
+  if (!node.hasAttribute("aria-label")) {
+    const texts = [...node.querySelectorAll("text")];
+    texts.forEach((t) => t.after(" "));  // not drawn, but keeps "Public Works Committee" and "8" apart in the text a reader computes
+    const visible = texts.map((t) => t.textContent.trim()).filter(Boolean).join(" ");
+    const words = [title, ...lines.filter(Boolean)].join(". ");
+    node.setAttribute("aria-label", visible && !words.startsWith(visible) ? `${visible}. ${words}` : words);
+  }
+  if (!node.hasAttribute("role")) node.setAttribute("role", "img");
   node.addEventListener("pointermove", (event) => showTip(node, title, lines, event));
   node.addEventListener("pointerleave", () => (tip.style.display = "none"));
   node.addEventListener("focus", () => showTip(node, title, lines));
@@ -294,31 +501,50 @@ function clickable(node, action) {
   return node;
 }
 
-// --- tabs ------------------------------------------------------------------------
-const TABS = { ask: ["viewAsk", "tabAsk"], queues: ["viewQueues", "tabQueues"], law: ["viewLaw", "tabLaw"] };
+// An alert: an icon and a word as well as a color, and a role so screen readers hear it.
+function alertBox(kind, ...children) {
+  const word = { warn: "Warning", error: "Error", info: "Note" }[kind];
+  return el("div", { class: `alert ${kind === "warn" ? "" : kind}`, role: kind === "error" ? "alert" : "status" },
+    el("div", {}, el("span", { class: "sr-only" }, word + ": "), children));
+}
+
+// --- sections: links in the nav, one view shown at a time ---------------------------
+const TABS = {
+  explore: ["viewExplore", "tabExplore", "#explore", "Explore"], ask: ["viewAsk", "tabAsk", "#ask", "Ask and search"],
+  queues: ["viewQueues", "tabQueues", "#coming-up", "Coming up"], law: ["viewLaw", "tabLaw", "#law", "Law"],
+};
 function showTab(name) {
-  for (const [tab, [view, button]] of Object.entries(TABS)) {
+  for (const [tab, [view, link]] of Object.entries(TABS)) {
     $(view).classList.toggle("hidden", tab !== name);
-    $(button).setAttribute("aria-selected", tab === name);
+    if (tab === name) $(link).setAttribute("aria-current", "page"); else $(link).removeAttribute("aria-current");
   }
+  const [, , hash, title] = TABS[name];
+  // Browser tab title: "Page | Site", as the design system asks.
+  document.title = `${title} | Legislative record`;
+  if (location.hash !== hash) history.replaceState(null, "", location.pathname + location.search + hash);
+  if (name === "explore") loadExplore();
   if (name === "queues") loadQueues();
   if (name === "law") metaReady.then(loadLaw);
 }
-for (const [tab, [, button]] of Object.entries(TABS)) $(button).onclick = () => showTab(tab);
+const tabOfHash = (hash) => Object.keys(TABS).find((tab) => TABS[tab][2] === hash);
+for (const [tab, [, link]] of Object.entries(TABS)) {
+  $(link).addEventListener("click", follow(() => { showTab(tab); $("main").focus({ preventScroll: true }); }));
+}
+addEventListener("hashchange", () => { const tab = tabOfHash(location.hash); if (tab) showTab(tab); });
 
 // --- meta and filters ------------------------------------------------------------
 let META = {};
 async function loadMeta() {
   META = await api("/api/meta");
-  document.title = `${META.jurisdiction} legislative record`;
-  $("heading").textContent = `${META.jurisdiction} legislative record`;
-  $("metaLine").textContent = `${META.matters.toLocaleString()} matters and ${META.meetings.toLocaleString()} meetings through ${fmtDate(META.latest_meeting)}. ` +
-    `Answers are written by ${META.chat_model} running on this computer.`;
+  // The county logo belongs on the county's record only; another Legistar tenant gets the plain name.
+  $("logo").classList.toggle("hidden", META.client !== "hennepinmn");
+  if (META.client !== "hennepinmn") $("heading").textContent = `${META.jurisdiction} legislative record`;
   const fill = (id, values) => values.forEach((value) => $(id).append(el("option", {}, value)));
   fill("fBody", META.bodies); fill("fDepartment", META.departments); fill("fType", META.matter_types); fill("fStatus", META.statuses);
   for (const [example, mode] of [["embedded social workers in police departments", "search"], ["26-0333", "search"], ["opioid settlement spending", "search"], ["authority for design-build contracts", "search"],
                                  ["light rail", "topic"], ["affordable housing", "topic"]]) {
-    $("examples").append(el("button", { type: "button", onclick: () => { $("q").value = example; run(mode); } }, mode === "topic" ? example + " over time" : example));
+    const address = here(mode === "topic" ? { q: example, topic: 1 } : { q: example }) + "#ask";
+    $("examples").append(el("a", { href: address, onclick: follow(() => { $("q").value = example; run(mode); }) }, mode === "topic" ? cap(example) + " over time" : cap(example)));
   }
 }
 function params() {
@@ -336,51 +562,57 @@ function run(mode) {
   $("topicCard").classList.toggle("hidden", mode !== "topic");
   $("hitsCard").classList.toggle("hidden", mode === "topic");
   $("lawHitsCard").classList.add("hidden");
+  showTab("ask");
   if (mode === "topic") {
     $("topicChart").style.opacity = 0.5;
+    announce("Counting matters…");
     api("/api/topic", query).then(renderTopic).catch((error) => {
       $("topicChart").style.opacity = 1;
-      $("topicChart").replaceChildren(el("div", { class: "error" }, error.message));
+      $("topicChart").replaceChildren(alertBox("error", error.message));
     });
     return;
   }
   $("hits").style.opacity = 0.5;  // hold the previous results while the new ones load
   if (mode === "search") {
-    api("/api/search", query).then((data) => { renderHits(data.hits, "Results"); renderLawHits(data.law, null, data.lead); }).catch(showError);
+    announce("Searching…");
+    api("/api/search", query).then((data) => { renderHits(data.hits, "Results"); renderLawHits(data.law, null, data.lead); announce(`${plural(data.hits.length, "result")}.`); }).catch(showError);
     return;
   }
   const answer = $("answer"), foot = $("answerFoot");
   let text = "";
   answer.replaceChildren(el("p", { class: "note" }, "Searching the record…"));
   foot.replaceChildren();
-  $("askBtn").disabled = true;
+  // Screen readers hear "busy", then the finished answer once, not every word as it arrives.
+  answer.setAttribute("aria-busy", "true");
+  announce("Searching the record. The answer will follow.");
   stream = new EventSource("/api/ask?" + new URLSearchParams(Object.entries(query).filter(([, v]) => v)));
-  const finish = () => { if (stream) stream.close(); stream = null; $("askBtn").disabled = false; };
+  const finish = () => { if (stream) stream.close(); stream = null; answer.setAttribute("aria-busy", "false"); };
   stream.addEventListener("sources", (event) => {
     const data = JSON.parse(event.data);
     renderHits(data.hits, "Sources");
     renderLawHits(data.law, data.hits.length);
-    if (data.dropped) foot.append(el("div", { class: "note" }, `${data.dropped} lower-ranked sources were left out to fit the model's context window.`));
-    answer.replaceChildren(el("p", { class: "note" }, `Reading ${data.hits.length + (data.law || []).length} sources… the first answer after a pause can take a minute while the model loads.`));
+    if (data.dropped) foot.append(el("div", { class: "note" }, `${plural(data.dropped, "lower-ranked source")} ${data.dropped === 1 ? "was" : "were"} left out because the model can read only so much at once.`));
+    answer.replaceChildren(el("p", { class: "note" }, `Reading ${data.hits.length + (data.law || []).length} sources. After a quiet spell, the first answer can take up to a minute while the model starts.`));
   });
   stream.addEventListener("token", (event) => { text += JSON.parse(event.data).text; renderAnswer(answer, text); });
   stream.addEventListener("done", (event) => {
     const data = JSON.parse(event.data);
     renderAnswer(answer, text);
     if (data.unsupported.length) {
-      foot.append(el("div", { class: "warn" }, "Check these against the sources. The answer contains identifiers that do not appear in them:",
+      foot.append(alertBox("warn", "Check these against the sources. The answer names them, but the sources do not:",
         el("ul", {}, data.unsupported.map((item) => el("li", {}, item)))));
     }
-    foot.append(el("div", { class: "note" }, `Written by ${data.model} in ${data.seconds} s from the sources below. A small local model can misread; the sources are the record.`));
+    foot.append(el("div", { class: "note" }, `Written by ${data.model} in ${data.seconds} seconds from the sources below. The model can misread. The sources are the record.`));
     finish();
+    announce("The answer is ready. " + answer.textContent);
   });
   stream.addEventListener("error", (event) => {
-    const message = event.data ? JSON.parse(event.data).message : "The connection to the local server was lost.";
-    foot.append(el("div", { class: "error" }, message));
+    const message = event.data ? JSON.parse(event.data).message : "The connection to the server was lost. Reload the page and try again.";
+    foot.append(alertBox("error", message));
     finish();
   });
 }
-function showError(error) { $("hits").style.opacity = 1; $("hits").replaceChildren(el("div", { class: "error" }, error.message)); }
+function showError(error) { $("hits").style.opacity = 1; $("hits").replaceChildren(alertBox("error", error.message)); }
 $("askForm").addEventListener("submit", (event) => { event.preventDefault(); run("ask"); });
 $("searchBtn").onclick = () => run("search");
 $("topicBtn").onclick = () => run("topic");
@@ -420,23 +652,23 @@ function inline(text) {
 function flashHit(n) {
   const row = document.querySelector(`.hit[data-n="${n}"]`);
   if (!row) return;
-  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.scrollIntoView({ behavior: MOTION, block: "center" });
   row.classList.add("flash");
   setTimeout(() => row.classList.remove("flash"), 1600);
 }
 function renderHits(hits, title) {
   $("hits").style.opacity = 1;
   $("hitsTitle").textContent = `${title} (${hits.length})`;
-  if (!hits.length) { $("hits").replaceChildren(el("div", { class: "note" }, "Nothing matched.")); return; }
+  if (!hits.length) { $("hits").replaceChildren(el("div", { class: "note" }, "Nothing matched. Try fewer words, or clear the filters.")); return; }
   $("hits").replaceChildren(...hits.map((hit, index) => {
     const last = hit.history[hit.history.length - 1];
     const passage = hit.passages.find((p) => p.section !== "title");
     return el("div", { class: "hit", "data-n": index + 1 },
       el("div", { class: "n" }, `[${index + 1}]`),
       el("div", {},
-        el("div", {}, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: hit.matter }) }, hit.file_number), " ",
-          el("span", { class: "pill" }, hit.status || "no status"), " ",
-          hit.awaiting.length ? el("span", { class: "pill" }, "queued for " + hit.awaiting.join(", ")) : null),
+        el("div", {}, matterLink(hit.file_number, { id: hit.matter }), " ",
+          el("span", { class: "pill" }, cap(hit.status) || "No status"), " ",
+          hit.awaiting.length ? el("span", { class: "pill" }, "Queued for " + hit.awaiting.join(", ")) : null),
         el("div", { class: "title" }, clip(hit.title, 260)),
         el("div", { class: "meta" }, [hit.matter_type, hit.department,
           last ? `last: ${fmtDate(last.date)}, ${last.body}, ${last.action || "on agenda"}` : null,
@@ -447,19 +679,28 @@ function renderHits(hits, title) {
 }
 
 // --- drawer: a matter, or a department / statute / body ---------------------------
+// Opening the pane moves keyboard focus into it; closing it returns focus to where it was.
 const trail = [];
+let opener = null;
 function openDrawer(render) {
+  if (!document.body.classList.contains("split")) opener = document.activeElement;
   trail.push(render);
   document.body.classList.add("split");
-  $("drawerBack").disabled = trail.length < 2;
+  $("drawerBack").setAttribute("aria-disabled", String(trail.length < 2));
   render();
+  $("drawer").focus({ preventScroll: true });
 }
-$("drawerClose").onclick = () => { trail.length = 0; document.body.classList.remove("split"); tip.style.display = "none"; };
+$("drawerClose").onclick = () => {
+  trail.length = 0; document.body.classList.remove("split"); tip.style.display = "none";
+  if (opener && opener.isConnected) opener.focus(); else $("main").focus();
+  opener = null;
+};
 // The divider: drag it, or focus it and use the arrow keys. The width is remembered in this browser.
 const divider = $("divider");
 function setDrawerWidth(px) {
   const width = Math.round(Math.max(360, Math.min(px, innerWidth - 340)));
   document.documentElement.style.setProperty("--drawer-w", width + "px");
+  divider.setAttribute("aria-valuenow", String(Math.round((width / innerWidth) * 100)));  // the pane's share of the window, in percent
   try { localStorage.setItem("drawerWidth", String(width)); } catch (error) { /* private window: not remembered */ }
 }
 try { const saved = Number(localStorage.getItem("drawerWidth")); if (saved) setDrawerWidth(saved); } catch (error) { /* use the default */ }
@@ -474,9 +715,9 @@ divider.addEventListener("keydown", (event) => {
   if (step) { event.preventDefault(); setDrawerWidth($("drawer").getBoundingClientRect().width + step); }
 });
 $("drawerBack").onclick = () => { if (trail.length > 1) { trail.pop(); const render = trail.pop(); openDrawer(render); } };
-document.addEventListener("keydown", (event) => { if (event.key === "Escape") $("drawerClose").click(); });
-const drawerLoading = () => $("drawerBody").replaceChildren(el("div", { class: "note" }, "Loading…"));
-const drawerError = (error) => $("drawerBody").replaceChildren(el("div", { class: "error" }, error.message));
+document.addEventListener("keydown", (event) => { if (event.key === "Escape" && document.body.classList.contains("split")) $("drawerClose").click(); });
+const drawerLoading = () => $("drawerBody").replaceChildren(el("div", { class: "note", role: "status" }, "Loading…"));
+const drawerError = (error) => $("drawerBody").replaceChildren(alertBox("error", error.message));
 
 function openMatter(ref) {
   openDrawer(() => { drawerLoading(); api("/api/matter", ref).then(renderMatter).catch(drawerError); });
@@ -490,29 +731,34 @@ function renderMatter(data) {
     .sort((a, b) => a.date.localeCompare(b.date));
   $("drawerBody").replaceChildren(
     el("div", { class: "card" },
-      el("h2", {}, card.file_number, " ", el("span", { class: "pill" }, card.status || "no status")),
+      el("h2", {}, card.file_number, " ", el("span", { class: "pill" }, cap(card.status) || "No status")),
       el("div", { class: "title" }, card.title),
       el("div", { class: "meta" }, [card.matter_type, card.department, card.intro_date ? "introduced " + fmtDate(card.intro_date) : null,
-        card.recommendation ? "administrator: " + card.recommendation : null].filter(Boolean).join(" · ")),
-      card.url ? el("div", { class: "meta" }, el("a", { href: card.url, target: "_blank", rel: "noopener" }, "Open in Legistar")) : null),
+        card.recommendation ? "county administrator's recommendation: " + card.recommendation : null].filter(Boolean).join(" · ")),
+      card.url ? el("div", { class: "meta" }, outLink(card.url, "Open in Legistar")) : null),
+    data.tags ? el("div", { class: "card" },
+      el("h2", {}, "Summary"),
+      data.tags.gist ? [el("div", {}, data.tags.gist), el("div", { class: "meta" }, `Written by ${data.tags.model}. The title and text are the record.`)]
+        : el("div", { class: "note" }, "No summary has been written for this matter yet."),
+      el("div", { class: "chips", style: "margin-top:8px;gap:6px" }, data.tags.themes.map((t) => themePill(t)),
+        data.tags.storyline ? storylineLink(data.tags.storyline.id, `Storyline: ${clip(data.tags.storyline.name, 60)} (${plural(data.tags.storyline.matters, "matter")})`, { class: "pill" }) : null)) : null,
     el("div", { class: "card" },
-      el("h2", {}, "Path through the bodies"),
+      el("h2", {}, "Path through boards and committees"),
       el("div", { class: "sub" }, "Each dot is one appearance on an agenda, left to right in date order. A hollow dot has no action recorded yet."),
       journeyChart(data.journey),
-      el("details", {}, el("summary", {}, "Show as a table"),
-        el("table", {}, el("tr", {}, ["Date", "Item", "Body", "Action", "Result", "Sent to"].map((h) => el("th", {}, h))),
-          rows.map((r) => el("tr", {}, [fmtDate(r.date), r.file, r.body, r.action || "on agenda, no action yet", r.result || "", r.referred_to || ""].map((v) => el("td", {}, v))))))),
+      chartData(`Path of ${card.file_number} through boards and committees`, ["Date", "Matter", "Board or committee", "Action", "Result", "Sent to"],
+        rows.map((r) => [fmtDate(r.date), r.file, r.body, r.action || "On agenda, no action yet", r.result || "", r.referred_to || ""]), `${card.file_number}-path.csv`)),
     el("div", { class: "card" },
       el("h2", {}, "Connections"),
-      el("div", { class: "sub" }, "What the graph links to this item. Select an item to open it; select a department or body to list everything attached to it; select a statute, session law or ordinance for its text and what else rests on it."),
+      el("div", { class: "sub" }, "What the record links to this matter. Select a matter to open it, a department or board to list everything attached to it, or a statute, session law or ordinance for its text and what else relies on it."),
       data.neighbours.length ? connectionsChart(card, data.neighbours) : el("div", { class: "note" }, "No links recorded.")),
     el("div", { class: "card" },
       el("h2", {}, "Text"),
       ["resolution", "background"].filter((s) => data.sections[s]).map((s) =>
         el("details", { open: s === "resolution" ? "" : null }, el("summary", {}, s === "resolution" ? "Resolution" : "Staff background"), el("div", { class: "text" }, data.sections[s]))),
-      Object.keys(data.sections).length ? null : el("div", { class: "note" }, "This item has no text beyond its title."),
+      Object.keys(data.sections).length ? null : el("div", { class: "note" }, "This matter has no text beyond its title."),
       data.attachments.length ? el("details", {}, el("summary", {}, `Attachments (${data.attachments.length})`),
-        el("ul", {}, data.attachments.map((a) => el("li", {}, el("a", { href: a.url, target: "_blank", rel: "noopener" }, a.name))))) : null));
+        el("ul", {}, data.attachments.map((a) => el("li", {}, outLink(a.url, a.name))))) : null));
   $("drawer").scrollTop = 0;
 }
 function renderNode(node) {
@@ -523,13 +769,13 @@ function renderNode(node) {
   $("drawerBody").replaceChildren(
     el("div", { class: "card" },
       el("h2", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR[node.type]}` }), " ", node.label),
-      el("div", { class: "meta" }, `${node.total.toLocaleString()} matters ${node.relation}` + (node.total > node.matters.length ? `; the ${node.matters.length} most recent are listed` : "")),
-      node.url ? el("div", { class: "meta" }, el("a", { href: node.url, target: "_blank", rel: "noopener" }, "Read the statute at the Revisor's office")) : null),
+      el("div", { class: "meta" }, `${node.total.toLocaleString()} matters ${node.relation}` + (node.total > node.matters.length ? `. The ${node.matters.length} most recent are listed.` : ".")),
+      node.url ? el("div", { class: "meta" }, outLink(node.url, "Read the statute at the Revisor's office")) : null),
     el("div", { class: "card" },
-      el("table", {}, el("tr", {}, ["Item", "Title", "Status", "Last action"].map((h) => el("th", {}, h))),
+      table(`Matters ${node.relation}`, ["Matter", "Title", "Status", "Last action"],
         node.matters.map((m) => el("tr", {},
-          el("td", {}, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: m.id }) }, m.file_number)),
-          el("td", {}, clip(m.title, 170)), el("td", {}, m.status || ""), el("td", { style: "white-space:nowrap" }, fmtDate(m.last_action)))))));
+          el("td", { class: "nowrap" }, matterLink(m.file_number, { id: m.id })),
+          el("td", {}, clip(m.title, 170)), el("td", {}, m.status || ""), el("td", { class: "nowrap" }, fmtDate(m.last_action)))))));
   $("drawer").scrollTop = 0;
 }
 
@@ -543,19 +789,19 @@ function journeyChart(family) {
   const bodies = [];
   [...family.flatMap((m) => m.history)].sort((a, b) => a.date.localeCompare(b.date)).forEach((h) => { if (!bodies.includes(h.body)) bodies.push(h.body); });
   family.forEach((m) => m.awaiting.forEach((body) => { if (!bodies.includes(body)) bodies.push(body); }));
-  if (!bodies.length) return el("div", { class: "note" }, "This item has not been on an agenda.");
-  const left = 230, colW = 136, rowH = 70, top = 22, columns = dates.length + (queued ? 1 : 0);
-  const width = left + columns * colW + 16, height = top + bodies.length * rowH + 26;
+  if (!bodies.length) return el("div", { class: "note" }, "This matter has not been on an agenda.");
+  const left = 270, colW = 176, rowH = 80, top = 24, columns = dates.length + (queued ? 1 : 0);
+  const width = left + columns * colW + 16, height = top + bodies.length * rowH + 30;
   const x = (i) => left + i * colW + colW / 2, y = (body) => top + bodies.indexOf(body) * rowH + rowH / 2;
-  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Path of the item through the bodies, by meeting date" });
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": "Path of the matter through boards and committees, by meeting date. The same facts are in the table below." });
   bodies.forEach((body) => {
     root.append(svg("line", { x1: left, x2: width - 8, y1: y(body), y2: y(body), stroke: "var(--grid)", "stroke-width": 1 }));
     const words = body.split(" "), lines = [""];
     words.forEach((w) => { if ((lines[lines.length - 1] + " " + w).trim().length > 30) lines.push(w); else lines[lines.length - 1] = (lines[lines.length - 1] + " " + w).trim(); });
-    lines.forEach((line, i) => root.append(svg("text", { x: left - 14, y: y(body) + 4 + (i - (lines.length - 1) / 2) * 15, "text-anchor": "end" }, line)));
+    lines.forEach((line, i) => root.append(svg("text", { x: left - 14, y: y(body) + 5 + (i - (lines.length - 1) / 2) * 19, "text-anchor": "end" }, line)));
   });
   dates.forEach((d, i) => root.append(svg("text", { x: x(i), y: height - 6, "text-anchor": "middle", class: "muted" }, fmtDate(d))));
-  if (queued) root.append(svg("text", { x: x(dates.length), y: height - 6, "text-anchor": "middle", class: "muted" }, "next"));
+  if (queued) root.append(svg("text", { x: x(dates.length), y: height - 6, "text-anchor": "middle", class: "muted" }, "Next"));
   family.forEach((member, s) => {
     const color = SERIES[s], offset = family.length > 1 ? (s - (family.length - 1) / 2) * 18 : 0;
     const seen = {};
@@ -570,16 +816,16 @@ function journeyChart(family) {
       // Dashed on purpose: this leg has not happened yet.
       if (lastPoint) root.append(svg("line", { x1: lastPoint.px, y1: lastPoint.py, x2: qx, y2: qy, stroke: color, "stroke-width": 2, "stroke-dasharray": "5 5", "stroke-linecap": "round" }));
       const mark = svg("g", {}, svg("circle", { cx: qx, cy: qy, r: 6, fill: "var(--surface)", stroke: color, "stroke-width": 2 }),
-        svg("text", { x: qx, y: qy - 13, "text-anchor": "middle", class: "strong halo" }, "queued"),
+        svg("text", { x: qx, y: qy - 14, "text-anchor": "middle", class: "strong halo" }, "Queued"),
         svg("circle", { cx: qx, cy: qy, r: 14, class: "hitarea" }));
       mark.setAttribute("tabindex", "0");
-      root.append(withTip(mark, `${member.file_number}: queued`, [body, "On a draft agenda under a referral heading; no action recorded yet."]));
+      root.append(withTip(mark, `${member.file_number}: queued`, [body, "On a draft agenda under a referral heading. No action recorded yet."]));
     });
     points.forEach((p) => {
       const pending = !p.h.action, above = s % 2 === 0;
       const mark = svg("g", {},
         svg("circle", { cx: p.px, cy: p.py, r: 6, fill: pending ? "var(--surface)" : color, stroke: pending ? color : "var(--surface)", "stroke-width": 2 }),
-        svg("text", { x: p.px, y: p.py + (above ? -13 : 22), "text-anchor": "middle", class: "strong halo" }, clip(p.h.action || "on agenda", 21)),
+        svg("text", { x: p.px, y: p.py + (above ? -14 : 26), "text-anchor": "middle", class: "strong halo" }, clip(cap(p.h.action) || "On agenda", 20)),
         svg("circle", { cx: p.px, cy: p.py, r: 14, class: "hitarea" }));
       mark.setAttribute("tabindex", "0");
       root.append(withTip(mark, `${member.file_number}: ${p.h.action || "on agenda, no action yet"}`,
@@ -587,31 +833,31 @@ function journeyChart(family) {
     });
   });
   const legend = family.length > 1 ? el("div", { class: "legend" }, family.map((m, s) =>
-    el("span", {}, el("span", { class: "swatch", style: `background:${SERIES[s]}` }), `${m.file_number} (${m.status || "no status"})`))) : null;
+    el("span", {}, el("span", { class: "swatch", style: `background:${SERIES[s]}` }), `${m.file_number} (${cap(m.status) || "No status"})`))) : null;
   return el("div", {}, legend, el("div", { class: "chart" }, root));
 }
 
-// --- chart: the item's neighbours in the graph -------------------------------------
-// The item sits in the middle. What it comes from is on the left, where it went and
-// what points at it on the right. Colour marks the kind of node; every node is labelled.
+// --- chart: the matter's neighbours in the graph -------------------------------------
+// The matter sits in the middle. What it comes from is on the left, where it went and
+// what points at it on the right. Color marks the kind of node; every node is labeled.
 function connectionsChart(card, groups) {
-  const rowH = 26, headH = 24, gap = 14, width = 940, cx = width / 2, dotL = 290, dotR = width - 290;
+  const rowH = 30, headH = 30, gap = 14, width = 1040, cx = width / 2, dotL = 340, dotR = width - 340;
   const columnHeight = (side) => groups.filter((g) => g.side === side).reduce((sum, g) => sum + headH + (g.nodes.length + (g.more ? 1 : 0)) * rowH + gap, 0);
   const height = Math.max(columnHeight("in"), columnHeight("out"), 120) + 10, cy = height / 2;
-  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `Items, bodies, departments and statutes linked to ${card.file_number}` });
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": `Matters, boards, departments and law linked to ${card.file_number}. The same links are in the table below.` });
   const links = svg("g", {}), marks = svg("g", {});
   root.append(links, marks);
   for (const side of ["in", "out"]) {
     const dotX = side === "in" ? dotL : dotR, anchor = side === "in" ? "end" : "start", textX = dotX + (side === "in" ? -12 : 12);
     let cursor = (height - columnHeight(side)) / 2 + 6;
     for (const group of groups.filter((g) => g.side === side)) {
-      marks.append(svg("text", { x: textX, y: cursor + 12, "text-anchor": anchor, class: "muted", style: "text-transform:uppercase;letter-spacing:.04em;font-size:11px" }, group.name));
+      marks.append(svg("text", { x: textX, y: cursor + 16, "text-anchor": anchor, class: "muted", style: "font-weight:600" }, group.name));
       cursor += headH;
       for (const node of group.nodes) {
         const ny = cursor + rowH / 2 - 4;
         const link = svg("path", { d: `M${cx},${cy} C${(cx + dotX) / 2},${cy} ${(cx + dotX) / 2},${ny} ${dotX},${ny}`, fill: "none", stroke: "var(--axis)", "stroke-width": 1.5 });
         links.append(link);
-        const label = node.type === "matter" ? `${node.label}  ${clip(node.detail, 30)}` : clip(node.label, 42);
+        const label = node.type === "matter" ? `${node.label}  ${clip(node.detail, 28)}` : clip(node.label, 40);
         const mark = svg("g", {},
           svg("rect", { x: side === "in" ? 4 : dotX - 12, y: ny - rowH / 2, width: dotL + 8, height: rowH, class: "hitarea" }),
           svg("circle", { cx: dotX, cy: ny, r: 6, fill: TYPE_COLOR[node.type], stroke: "var(--surface)", "stroke-width": 2 }),
@@ -620,7 +866,7 @@ function connectionsChart(card, groups) {
         mark.addEventListener("pointerenter", () => highlight(true)); mark.addEventListener("pointerleave", () => highlight(false));
         mark.addEventListener("focus", () => highlight(true)); mark.addEventListener("blur", () => highlight(false));
         clickable(mark, () => (node.type === "matter" ? openMatter({ id: node.id }) : openNode(node.id)));
-        marks.append(withTip(mark, node.label, [node.detail, `${group.name.toLowerCase()} · select to open`]));
+        marks.append(withTip(mark, node.label, [node.detail, `${group.name}. Select to open.`]));
         cursor += rowH;
       }
       if (group.more) { marks.append(svg("text", { x: textX, y: cursor + rowH / 2, "text-anchor": anchor, class: "muted" }, `and ${group.more} more`)); cursor += rowH; }
@@ -628,15 +874,17 @@ function connectionsChart(card, groups) {
     }
   }
   marks.append(svg("circle", { cx, cy, r: 9, fill: TYPE_COLOR.matter, stroke: "var(--surface)", "stroke-width": 2 }),
-    svg("text", { x: cx, y: cy - 16, "text-anchor": "middle", class: "strong", style: "font-size:13px" }, card.file_number));
-  const legend = el("div", { class: "legend" }, [["Item", "matter"], ["Body or department", "body"], ["Law", "statute"]].map(([name, type]) =>
+    svg("text", { x: cx, y: cy - 16, "text-anchor": "middle", class: "strong halo" }, card.file_number));
+  const legend = el("div", { class: "legend" }, [["Matter", "matter"], ["Board, committee or department", "body"], ["Law", "statute"]].map(([name, type]) =>
     el("span", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR[type]}` }), name)));
-  return el("div", {}, legend, el("div", { class: "chart" }, root));
+  const rows = groups.flatMap((g) => [...g.nodes.map((n) => [g.name, n.label, n.detail || ""]), ...(g.more ? [[g.name, `and ${g.more} more`, ""]] : [])]);
+  return el("div", {}, legend, el("div", { class: "chart" }, root),
+    chartData(`What the record links to ${card.file_number}`, ["Link", "To", "Detail"], rows, `${card.file_number}-connections.csv`));
 }
 
 // --- chart: a topic over time ------------------------------------------------------
 // Stacked columns: one per quarter, one segment per requesting department. The five
-// largest departments get a colour each, in a fixed order; the rest fold into "Other".
+// largest departments get a color each, in the county palette's order; the rest fold into "Other".
 const TOPIC_COLORS = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)", "var(--series-5)"];
 function topicColor(data, department) {
   if (department === "Other departments") return "var(--neutral-1)";
@@ -644,39 +892,41 @@ function topicColor(data, department) {
   return TOPIC_COLORS[data.departments.indexOf(department)];
 }
 function renderTopic(data) {
-  const chart = $("topicChart"), table = $("topicTable");
+  const chart = $("topicChart"), listBox = $("topicTable");
   chart.style.opacity = 1;
   $("topicTitle").textContent = `"${data.query}" over time`;
-  $("topicSub").textContent = `${data.total.toLocaleString()} matters contain every word of the query, counted in the quarter each was introduced and coloured by requesting department.`;
+  $("topicSub").textContent = `${data.total.toLocaleString()} matters contain every word you typed. Each is counted in the quarter it was introduced, and colored by the department that requested it.`;
   if (!data.total) {
-    chart.replaceChildren(el("div", { class: "note" }, "No matter contains all of those words. Try fewer words: this view counts exact wording, unlike Search, which ranks by meaning."));
-    table.replaceChildren();
+    chart.replaceChildren(el("div", { class: "note" }, "No matter contains all of those words. Try fewer words. This chart counts exact wording, unlike Search, which ranks by meaning."));
+    listBox.replaceChildren();
+    announce("No matters found.");
     return;
   }
+  announce(`${plural(data.total, "matter")} found.`);
   const quarters = data.quarters, max = Math.max(...quarters.map((q) => q.total), 1);
   const step = max <= 5 ? 1 : max <= 12 ? 2 : max <= 30 ? 5 : max <= 60 ? 10 : 20, top = Math.ceil(max / step) * step;
-  const left = 40, colW = 52, barW = 22, plotH = 220, topPad = 14, width = left + quarters.length * colW + 12, height = topPad + plotH + 46;
+  const left = 48, colW = 56, barW = 24, plotH = 220, topPad = 18, width = left + quarters.length * colW + 12, height = topPad + plotH + 54;
   const y = (n) => topPad + plotH - (n / top) * plotH;
-  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `Matters about ${data.query} per quarter, by requesting department` });
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": `Matters about ${data.query} per quarter, by requesting department. The numbers are in the table below the chart.` });
   for (let tick = 0; tick <= top; tick += step) {
     root.append(svg("line", { x1: left, x2: width - 8, y1: y(tick), y2: y(tick), stroke: tick ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }),
-      svg("text", { x: left - 8, y: y(tick) + 4, "text-anchor": "end", class: "muted", style: "font-variant-numeric:tabular-nums" }, String(tick)));
+      svg("text", { x: left - 8, y: y(tick) + 5, "text-anchor": "end", class: "muted", style: "font-variant-numeric:tabular-nums" }, String(tick)));
   }
   const partial = (label) => label === quarters[0].quarter || label === quarters[quarters.length - 1].quarter;
   let selected = null;
   const showRows = () => {
     const rows = data.matters.filter((m) => !selected || m.quarter === selected);
-    table.replaceChildren(
-      el("div", { class: "note" }, selected ? `${rows.length} matters introduced in ${selected}. ` : `All ${rows.length} matters, newest first. Select a column to narrow to one quarter. `,
+    listBox.replaceChildren(
+      el("div", { class: "note" }, selected ? `${rows.length} matters introduced in ${selected}. ` : `All ${rows.length} matters, newest first. Select a column to narrow the list to one quarter. `,
         selected ? el("button", { class: "btn small", type: "button", onclick: () => { selected = null; showRows(); } }, "Show all quarters") : null),
-      el("table", {}, el("tr", {}, ["Item", "Title", "Department", "Status", "Introduced"].map((h) => el("th", {}, h))),
+      table(selected ? `Matters introduced in ${selected}` : "Matters, newest first", ["Matter", "Title", "Department", "Status", "Introduced"],
         rows.slice(0, 300).map((m) => el("tr", {},
-          el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: m.id }) }, m.file_number)),
-          el("td", {}, clip(m.title, 160)), el("td", {}, m.department), el("td", {}, m.status || ""), el("td", { style: "white-space:nowrap" }, fmtDate(m.date))))));
+          el("td", { class: "nowrap" }, matterLink(m.file_number, { id: m.id })),
+          el("td", {}, m.gist || clip(m.title, 160)), el("td", {}, m.department), el("td", {}, m.status || ""), el("td", { class: "nowrap" }, fmtDate(m.date))))));
   };
   quarters.forEach((quarter, i) => {
     const x = left + i * colW + (colW - barW) / 2, [year, q] = quarter.quarter.split(" ");
-    const column = svg("g", {}, svg("rect", { x: left + i * colW, y: topPad, width: colW, height: plotH + 40, class: "hitarea" }));
+    const column = svg("g", {}, svg("rect", { x: left + i * colW, y: topPad, width: colW, height: plotH + 50, class: "hitarea" }));
     let stacked = 0;
     const present = data.departments.filter((d) => quarter.counts[d]);
     present.forEach((department, n) => {
@@ -686,70 +936,78 @@ function renderTopic(data) {
       column.append(svg("path", { d: `M${x},${yTop + h} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${barW - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z`, fill: topicColor(data, department) }));
     });
     if (quarter.total === max) column.append(svg("text", { x: x + barW / 2, y: y(quarter.total) - 6, "text-anchor": "middle", class: "strong" }, String(quarter.total)));
-    column.append(svg("text", { x: x + barW / 2, y: topPad + plotH + 16, "text-anchor": "middle", class: "muted" }, q + (partial(quarter.quarter) ? "*" : "")));
-    if (q === "Q1" || i === 0) column.append(svg("text", { x: x + barW / 2, y: topPad + plotH + 32, "text-anchor": "middle" }, year));
+    column.append(svg("text", { x: x + barW / 2, y: topPad + plotH + 20, "text-anchor": "middle", class: "muted" }, q + (partial(quarter.quarter) ? "*" : "")));
+    if (q === "Q1" || i === 0) column.append(svg("text", { x: x + barW / 2, y: topPad + plotH + 40, "text-anchor": "middle", class: "muted" }, year));
     clickable(column, () => { selected = quarter.quarter; showRows(); });
     root.append(withTip(column, `${quarter.total} matters`, [quarter.quarter + (partial(quarter.quarter) ? " (partial quarter)" : ""),
       ...present.slice().reverse().map((d) => `${quarter.counts[d]}  ${d}`)]));
   });
+  const deptName = (d) => d === "No department" ? "No department recorded" : d;
   const legend = el("div", { class: "legend" }, data.departments.map((d) =>
-    el("span", {}, el("span", { class: "swatch", style: `border-radius:2px;background:${topicColor(data, d)}` }), d === "No department" ? "No department recorded" : d)));
+    el("span", {}, el("span", { class: "swatch", style: `border-radius:2px;background:${topicColor(data, d)}` }), deptName(d))));
   chart.replaceChildren(legend, el("div", { class: "chart" }, root),
-    el("div", { class: "note" }, `* Partial quarter: the record runs from ${fmtDate(data.record_starts)} to ${fmtDate(data.record_ends)}.`));
+    el("div", { class: "note" }, `* Partial quarter: the record runs from ${fmtDate(data.record_starts)} to ${fmtDate(data.record_ends)}.`),
+    chartData(`Matters about ${data.query} per quarter, by requesting department`, ["Quarter", ...data.departments.map(deptName), "Total"],
+      quarters.map((q) => [q.quarter, ...data.departments.map((d) => q.counts[d] || 0), q.total]), "topic-over-time.csv",
+      [...data.departments.map((_, i) => i + 1), data.departments.length + 1]));
   showRows();
 }
 
 // --- coming up ------------------------------------------------------------------
-function queueTable(items, withBody) {
-  return el("table", {}, el("tr", {}, ["Item", "Title", "Department", withBody ? "Sent to" : null, "Why it is listed", "Since"].filter(Boolean).map((h) => el("th", {}, h))),
+function queueTable(caption, items, withBody) {
+  return table(caption, ["Matter", "Title", "Department", withBody ? "Sent to" : null, "Why it is listed", "Since"].filter(Boolean),
     items.map((item) => el("tr", {},
-      el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: item.id }) }, item.file_number)),
+      el("td", { class: "nowrap" }, matterLink(item.file_number, { id: item.id })),
       el("td", {}, clip(item.title, 180)), el("td", {}, item.department || ""), withBody ? el("td", {}, item.body) : null,
-      el("td", {}, item.reason), el("td", { style: "white-space:nowrap" }, fmtDate(item.date)))));
+      el("td", {}, cap(item.reason)), el("td", { class: "nowrap" }, fmtDate(item.date)))));
 }
 let queuesLoaded = false;
 async function loadQueues() {
   if (queuesLoaded) return;
   queuesLoaded = true;
-  const data = await api("/api/queues");
+  let data;
+  try { data = await api("/api/queues"); } catch (error) { queuesLoaded = false; $("queueChart").replaceChildren(alertBox("error", `This list could not be loaded: ${error.message} Reload the page to try again.`)); return; }
   const chart = $("queueChart");
-  if (!data.queues.length) chart.replaceChildren(el("div", { class: "note" }, "Nothing is waiting on a body right now."));
+  if (!data.queues.length) chart.replaceChildren(el("div", { class: "note" }, "Nothing is waiting on a board or committee right now."));
   else {
-    const left = 330, barH = 16, rowH = 34, width = 900, max = Math.max(...data.queues.map((q) => q.items.length));
+    const left = 410, barH = 18, rowH = 36, width = 990, max = Math.max(...data.queues.map((q) => q.items.length));
     const scale = (n) => (n / max) * (width - left - 60);
-    const root = svg("svg", { width, height: data.queues.length * rowH + 8, viewBox: `0 0 ${width} ${data.queues.length * rowH + 8}`, role: "img", "aria-label": "Number of items coming up for each body" });
+    const root = svg("svg", { width, height: data.queues.length * rowH + 8, viewBox: `0 0 ${width} ${data.queues.length * rowH + 8}`, role: "group", "aria-label": "Number of matters coming up for each board or committee. The same numbers are in the table below the chart." });
     data.queues.forEach((queue, i) => {
       const yMid = i * rowH + rowH / 2 + 4, w = Math.max(scale(queue.items.length), 6);
       const bar = svg("g", {},
         svg("rect", { x: 0, y: i * rowH + 4, width, height: rowH, class: "hitarea" }),
-        svg("text", { x: left - 12, y: yMid + 4, "text-anchor": "end" }, queue.body),
+        svg("text", { x: left - 12, y: yMid + 5, "text-anchor": "end" }, clip(queue.body, 50)),
         // square at the baseline, rounded at the data end
         svg("path", { d: `M${left},${yMid - barH / 2} h${w - 4} a4,4 0 0 1 4,4 v${barH - 8} a4,4 0 0 1 -4,4 h${-(w - 4)} z`, fill: "var(--series-1)" }),
-        svg("text", { x: left + w + 8, y: yMid + 4, class: "strong" }, String(queue.items.length)));
-      clickable(bar, () => document.getElementById("queue-" + i).scrollIntoView({ behavior: "smooth", block: "start" }));
-      root.append(withTip(bar, `${queue.items.length} items`, [queue.body, "Select to see the list"]));
+        svg("text", { x: left + w + 8, y: yMid + 5, class: "strong" }, String(queue.items.length)));
+      clickable(bar, () => { const card = document.getElementById("queue-" + i); card.scrollIntoView({ behavior: MOTION, block: "start" }); card.querySelector("h2").focus({ preventScroll: true }); });
+      root.append(withTip(bar, plural(queue.items.length, "matter"), [queue.body, "Select to go to the list"]));
     });
     root.append(svg("line", { x1: left, x2: left, y1: 4, y2: data.queues.length * rowH + 4, stroke: "var(--axis)", "stroke-width": 1 }));
-    chart.replaceChildren(root);
+    chart.replaceChildren(root, chartData("Matters coming up, by board or committee", ["Board or committee", "Matters"],
+      data.queues.map((q) => [q.body, q.items.length]), "coming-up.csv", [1]));
   }
   $("queueLists").replaceChildren(...data.queues.map((queue, i) => el("div", { class: "card", id: "queue-" + i },
-    el("h2", {}, `${queue.body} (${queue.items.length})`),
-    queueTable(queue.items, false))),
+    el("h2", { tabindex: "-1" }, `${queue.body} (${queue.items.length})`),
+    queueTable(`Matters coming up for ${queue.body}`, queue.items, false))),
     ...(data.stale.length ? [el("div", { class: "card" },
-      el("h2", {}, `Sent somewhere more than ${data.stale_days} days ago and not heard since (${data.stale.length})`),
+      el("h2", {}, `Referred more than ${data.stale_days} days ago, with no action since (${data.stale.length})`),
       el("div", { class: "sub" }, "Probably leftovers in the record rather than a backlog, so they are not counted above."),
-      queueTable(data.stale, true))] : []));
-  $("meetings").replaceChildren(data.meetings.length ? el("table", {},
-    el("tr", {}, el("th", {}, "Date"), el("th", {}, "Body"), el("th", {}, "Minutes"), el("th", { class: "num" }, "Items"), el("th", {}, "")),
-    data.meetings.map((m) => el("tr", {}, el("td", { style: "white-space:nowrap" }, fmtDate(m.date)), el("td", {}, m.body), el("td", {}, m.minutes_status),
-      el("td", { class: "num" }, String(m.items)), el("td", {}, m.url ? el("a", { href: m.url, target: "_blank", rel: "noopener" }, "Legistar") : null))))
+      queueTable(`Matters referred more than ${data.stale_days} days ago with no action since`, data.stale, true))] : []));
+  $("meetings").replaceChildren(data.meetings.length ? table("Meetings without final minutes, last 60 days",
+    ["Date", "Board or committee", "Minutes", numTh("Matters"), "Legistar"],
+    data.meetings.map((m) => el("tr", {}, el("td", { class: "nowrap" }, fmtDate(m.date)), el("td", {}, m.body), el("td", {}, m.minutes_status),
+      el("td", { class: "num" }, String(m.items)),
+      // Each link names its meeting for screen readers, so the same visible words never lead to different pages unannounced.
+      el("td", {}, m.url ? outLink(m.url, "Meeting page", { "aria-label": `Meeting page: ${m.body}, ${fmtDate(m.date)}, in Legistar (opens in a new tab)` }) : null))))
     : el("div", { class: "note" }, "All recent minutes are final."));
 }
 
 
 // --- the law: related law under a search, and the Law tab ------------------------------
 const lawLabel = (hit) => hit.title && !hit.label.includes(hit.title) ? `${hit.label}  ${hit.title}` : hit.label;
-const statusPill = (status) => status && status !== "in force" ? el("span", { class: "pill alert" }, status) : null;
+const statusPill = (status) => status && status !== "in force" ? el("span", { class: "pill alert-pill" }, cap(status)) : null;
 const setKids = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filter((kid) => kid != null && kid !== false));
 const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
@@ -762,9 +1020,10 @@ function renderLawHits(law, offset, lead) {
   $("lawHitsSub").textContent = first
     ? "The law matches this question more closely than the record does, so it is shown first. The record's results follow."
     : "Statute sections and county ordinances whose text matches, ranked apart from the record.";
+  if (!$("lawHitsTitle").id) $("lawHitsTitle").id = "lawHitsTitle";
   setKids($("hitsNote"), law && law.length && offset == null && !first
-    ? el("button", { class: "filelink", type: "button", style: "font-weight:400", onclick: () => $("lawHitsCard").scrollIntoView({ behavior: "smooth", block: "start" }) },
-        `${plural(law.length, "statute section")} or ordinance${law.length === 1 ? "" : "s"} also match: see Related law below`) : null);
+    ? [`${plural(law.length, "statute section")} or ordinance${law.length === 1 ? "" : "s"} also match. `,
+       el("a", { href: "#lawHitsCard", onclick: follow(() => { $("lawHitsCard").scrollIntoView({ behavior: MOTION, block: "start" }); $("lawHitsTitle").setAttribute("tabindex", "-1"); $("lawHitsTitle").focus({ preventScroll: true }); }) }, "Go to related law")] : null);
   if (!law || !law.length) return;
   $("lawHitsTitle").textContent = offset == null ? `Related law (${law.length})` : `Law given to the model (${law.length})`;
   setKids($("lawHits"), ...law.map((hit, index) => {
@@ -772,7 +1031,7 @@ function renderLawHits(law, offset, lead) {
     return el("div", { class: "hit", "data-n": offset == null ? null : offset + index + 1 },
       el("div", { class: "n" }, offset == null ? "" : `[${offset + index + 1}]`),
       el("div", {},
-        el("div", {}, el("button", { class: "filelink", type: "button", onclick: () => openNode(passage ? passage.source : hit.id) }, hit.label), " ", statusPill(hit.status)),
+        el("div", {}, nodeLink(passage ? passage.source : hit.id, hit.label, { class: "filelink" }), " ", statusPill(hit.status)),
         el("div", { class: "title" }, hit.title || ""),
         el("div", { class: "meta" }, [hit.kind === "ordinance" ? "county ordinance" : "Minnesota Statutes",
           hit.cited_by ? `cited by ${plural(hit.cited_by, "matter")}` : "not cited in the record",
@@ -801,41 +1060,38 @@ function openLawText(law, anchor) {
         el("h2", {}, `${data.law}, ${data.label.replace(/\.$/, "")}`),
         data.heading ? el("div", { class: "title" }, data.heading) : null,
         el("div", { class: "meta" }, data.effective ? "Effective date: " + data.effective : "This section states no effective date of its own.", " ",
-          el("a", { href: data.url, target: "_blank", rel: "noopener" }, "Read it at the Revisor's office")),
-        el("div", { class: "legend", style: "margin-top:10px" }, el("span", {}, el("ins", {}, "inserted")), el("span", {}, el("del", {}, "struck"))),
+          outLink(data.url, "Read it at the Revisor's office")),
+        el("div", { class: "legend", style: "margin-top:10px" }, el("span", {}, el("ins", {}, "Inserted words are underlined")), el("span", {}, el("del", {}, "Struck words are crossed out"))),
         markedText(data.marked)));
       $("drawer").scrollTop = 0;
     }).catch(drawerError);
   });
 }
-const nodeLink = (id, label) => el("button", { class: "filelink", type: "button", onclick: () => openNode(id) }, label);
-const outLink = (url, label) => url ? el("a", { href: url, target: "_blank", rel: "noopener" }, label) : null;
 function mattersCard(node, title) {
-  if (!node.total) return el("div", { class: "card" }, el("h2", {}, title), el("div", { class: "note" }, "No item in the record cites it."));
+  if (!node.total) return el("div", { class: "card" }, el("h2", {}, title), el("div", { class: "note" }, "No matter in the record cites it."));
   return el("div", { class: "card" },
     el("h2", {}, `${title} (${node.total.toLocaleString()})`),
     node.total > node.matters.length ? el("div", { class: "sub" }, `The ${node.matters.length} most recent are listed.`) : null,
-    el("table", {}, el("tr", {}, ["Item", "Title", "Status", "Last action"].map((h) => el("th", {}, h))),
+    table(title, ["Matter", "Title", "Status", "Last action"],
       node.matters.map((m) => el("tr", {},
-        el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: m.id }) }, m.file_number)),
-        el("td", {}, clip(m.title, 170)), el("td", {}, m.status || ""), el("td", { style: "white-space:nowrap" }, fmtDate(m.last_action))))));
+        el("td", { class: "nowrap" }, matterLink(m.file_number, { id: m.id })),
+        el("td", {}, clip(m.title, 170)), el("td", {}, m.status || ""), el("td", { class: "nowrap" }, fmtDate(m.last_action))))));
 }
 // Rows of "this session law changed that statute". withStatute adds the statute columns.
-function changesTable(changes, withStatute) {
-  return el("table", {},
-    el("tr", {}, [withStatute ? "Statute" : "Session", "Change", "Made by", "Effective", withStatute ? "The record relies on it" : null].filter((h) => h != null).map((h) => el("th", {}, h))),
+function changesTable(caption, changes, withStatute) {
+  return table(caption, [withStatute ? "Statute" : "Session", "Change", "Made by", "Effective", withStatute ? "The record relies on it" : null].filter((h) => h != null),
     changes.map((c) => el("tr", {},
       withStatute
         ? el("td", {}, nodeLink(c.subdivision ? `mnstat:${c.statute}#${c.subdivision}` : `mnstat:${c.statute}`, `§ ${c.statute}` + (c.subdivision ? `, subd. ${c.subdivision}` : "")),
             el("div", { class: "meta" }, clip(c.headnote, 70)))
         : el("td", {}, String(c.year)),
-      el("td", {}, withStatute ? null : (c.subdivision ? `subd. ${c.subdivision} ` : "section "), el("span", { class: "pill" + (c.action === "Repealed" ? " alert" : "") }, c.action.toLowerCase())),
-      el("td", {}, el("span", { style: "white-space:nowrap" }, nodeLink(c.law, c.law_label)), [c.article ? `, art. ${c.article}` : "", c.section ? `, sec. ${c.section}` : ""].join(""),
+      el("td", {}, withStatute ? null : (c.subdivision ? `Subd. ${c.subdivision} ` : "Section "), el("span", { class: "pill" + (c.action === "Repealed" ? " alert-pill" : "") }, c.action.toLowerCase())),
+      el("td", {}, el("span", { class: "nowrap" }, nodeLink(c.law, c.law_label)), [c.article ? `, art. ${c.article}` : "", c.section ? `, sec. ${c.section}` : ""].join(""),
         c.has_text ? el("div", {}, el("button", { class: "btn small", type: "button", style: "margin-top:3px;white-space:nowrap", onclick: () => openLawText(c.law, c.anchor) }, "Show the change")) : null),
-      el("td", {}, c.effective ? clip(c.effective.replace(/^This section is effective /, ""), 90) : el("span", { class: "meta" }, "not stated here")),
+      el("td", {}, c.effective ? clip(c.effective.replace(/^This section is effective /, ""), 90) : el("span", { class: "meta" }, "Not stated here")),
       withStatute ? el("td", {}, [c.matters ? plural(c.matters, "matter") : null,
         c.subdivision_matters ? `${c.subdivision_matters} cite this subdivision` : null,
-        c.ordinances ? plural(c.ordinances, "ordinance") : null].filter(Boolean).join("; ") || el("span", { class: "meta" }, "not cited")) : null)));
+        c.ordinances ? plural(c.ordinances, "ordinance") : null].filter(Boolean).join("; ") || el("span", { class: "meta" }, "Not cited")) : null)));
 }
 
 
@@ -844,13 +1100,13 @@ function changesTable(changes, withStatute) {
 // server says what it gave the model to read, which is not always the whole thing.
 let lawStream = null;
 function readingFoot(info, again) {
-  const when = info.written_utc ? " on " + new Date(info.written_utc).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+  const when = info.written_utc ? " on " + new Date(info.written_utc).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "";
   return [
-    info.basis && info.basis !== "whole" ? el("div", { class: "warn" }, info.coverage) : null,
-    info.unsupported && info.unsupported.length ? el("div", { class: "warn" }, "Check against the text. It names places that are not in what it read:",
+    info.basis && info.basis !== "whole" ? alertBox("info", info.coverage) : null,
+    info.unsupported && info.unsupported.length ? alertBox("warn", "Check this against the text. It names places that are not in what the model read:",
       el("ul", {}, info.unsupported.map((item) => el("li", {}, item)))) : null,
-    info.current === false ? el("div", { class: "warn" }, "The text or the model has changed since this was written.") : null,
-    el("div", { class: "note" }, `Written by ${info.model}${when}` + (info.seconds ? ` in ${info.seconds} s` : "") +
+    info.current === false ? alertBox("warn", "The text or the model has changed since this was written." + (again ? " Select Write again to update it." : "")) : null,
+    el("div", { class: "note" }, `Written by ${info.model}${when}` + (info.seconds ? ` in ${info.seconds} seconds` : "") +
       (info.basis === "whole" ? ", from all of the text on this page. " : ". "),
       again ? el("button", { class: "btn small", type: "button", onclick: again }, "Write again") : null)];
 }
@@ -858,12 +1114,15 @@ function readerCard(node, noun) {
   if (lawStream) { lawStream.close(); lawStream = null; }
   const summaryBox = el("div", { class: "reading" }), summaryFoot = el("div", {});
   const answerBox = el("div", { class: "reading" }), answerFoot = el("div", {});
-  const input = el("input", { type: "text", placeholder: `Ask about this ${noun}, for example: who does it apply to?`, "aria-label": `Question about this ${noun}`, autocomplete: "off" });
+  const inputId = "lawQ" + Math.random().toString(36).slice(2, 8);
+  const input = el("input", { type: "text", id: inputId, "aria-describedby": inputId + "hint", autocomplete: "off" });
   const run = (question, fresh) => {
     if (lawStream) lawStream.close();
     const box = question ? answerBox : summaryBox, foot = question ? answerFoot : summaryFoot;
     let text = "", scope = {};
-    setKids(box, el("p", { class: "note" }, `${META.chat_model} is reading the ${noun}… a long one can take a minute.`));
+    setKids(box, el("p", { class: "note" }, `${META.chat_model} is reading the ${noun}. A long one can take a minute.`));
+    box.setAttribute("aria-busy", "true");
+    announce(`Reading the ${noun}.`);
     setKids(foot);
     const stream = lawStream = new EventSource("/api/law_ask?" + new URLSearchParams(Object.entries({ id: node.id, q: question, fresh: fresh ? "1" : "" }).filter(([, v]) => v)));
     const finish = () => { stream.close(); if (lawStream === stream) lawStream = null; };
@@ -872,12 +1131,15 @@ function readerCard(node, noun) {
     stream.addEventListener("done", (event) => {
       const data = JSON.parse(event.data);
       renderAnswer(box, text);
+      box.setAttribute("aria-busy", "false");
       setKids(foot, readingFoot({ ...data, coverage: scope.coverage, basis: scope.basis }, question ? null : () => run("", true)));
       finish();
+      announce((question ? "The answer is ready. " : "The summary is ready. ") + box.textContent);
     });
     stream.addEventListener("error", (event) => {
       setKids(box);
-      setKids(foot, el("div", { class: "error" }, event.data ? JSON.parse(event.data).message : "The connection to the local server was lost."));
+      box.setAttribute("aria-busy", "false");
+      setKids(foot, alertBox("error", event.data ? JSON.parse(event.data).message : "The connection to the server was lost. Reload the page and try again."));
       finish();
     });
   };
@@ -885,16 +1147,18 @@ function readerCard(node, noun) {
     renderAnswer(summaryBox, node.summary.text);
     setKids(summaryFoot, readingFoot(node.summary, () => run("", true)));
   } else {
-    setKids(summaryBox, el("button", { class: "btn", type: "button", onclick: () => run("", false) }, `Summarise with ${META.chat_model}`));
+    setKids(summaryBox, el("button", { class: "btn", type: "button", onclick: () => run("", false) }, `Summarize with ${META.chat_model}`));
   }
   return el("div", { class: "card" },
     el("h2", {}, "Summary and questions"),
     summaryBox, summaryFoot,
-    el("form", { class: "ask", style: "margin-top:12px", onsubmit: (event) => { event.preventDefault(); if (input.value.trim()) run(input.value.trim(), false); } },
+    el("label", { class: "field-label", for: inputId, style: "margin-top:14px" }, `Question about this ${noun}`),
+    el("p", { class: "hint", id: inputId + "hint" }, "For example: who does it apply to?"),
+    el("form", { class: "ask", onsubmit: (event) => { event.preventDefault(); if (input.value.trim()) run(input.value.trim(), false); } },
       input, el("button", { class: "btn", type: "submit" }, "Ask")),
     answerBox, answerFoot,
-    el("div", { class: "note" }, `A model running on this computer writes these from the text of this ${noun} and nothing else. It can misread, and it does not see other law that may bear on it. ` +
-      "What the law means for the county is for the County Attorney's Office."));
+    el("div", { class: "note" }, `The model writes these from the text of this ${noun} and nothing else. It can misread, and it does not see other law that may affect it. ` +
+      "What the law means for the county is for the County Attorney's Office to decide."));
 }
 function renderStatute(node) {
   const fetched = node.fetched;
@@ -903,26 +1167,26 @@ function renderStatute(node) {
     node.headnote ? el("div", { class: "title" }, node.headnote) : null,
     el("div", { class: "meta" }, [node.kind === "section" ? nodeLink(`mnstat:${node.chapter}`, `Chapter ${node.chapter}`) : null,
       node.heading ? ` · ${node.heading}` : null, node.edition ? ` · ${node.edition} edition` : null]),
-    node.note ? el("div", { class: "warn" }, node.note) : null,
-    fetched ? null : el("div", { class: "warn" }, node.kind === "section"
+    node.note ? alertBox("warn", node.note) : null,
+    fetched ? null : alertBox("warn", node.kind === "section"
       ? "This number is cited in the record, but Minnesota Statutes as published has no such section. The citation may be wrong."
       : "This chapter has not been fetched. Run legistutor ingest-law to add it."),
-    el("div", { class: "meta" }, outLink(node.url, "Read it at the Revisor's office"), fetched ? ". The Revisor's publication is the official text; this copy is for finding and linking." : null))];
+    el("div", { class: "meta" }, outLink(node.url, "Read it at the Revisor's office"), fetched ? ". The Revisor's publication is the official text. This copy is for finding and linking." : null))];
   if (node.kind === "chapter") {
     const sections = node.sections || [];
     if (fetched && sections.length) body.push(readerCard(node, "chapter"));
     const notable = sections.filter((s) => s.matters || s.changes);
-    const row = (s) => el("tr", {}, el("td", { style: "white-space:nowrap" }, nodeLink(s.id, s.number)), el("td", {}, s.headnote || "", " ", s.status == null ? el("span", { class: "pill alert" }, "cited, but no such section") : statusPill(s.status)),
+    const row = (s) => el("tr", {}, el("td", { class: "nowrap" }, nodeLink(s.id, s.number)), el("td", {}, s.headnote || "", " ", s.status == null ? el("span", { class: "pill alert-pill" }, "Cited, but no such section") : statusPill(s.status)),
       el("td", { class: "num" }, s.matters ? String(s.matters) : ""), el("td", { class: "num" }, s.changes ? String(s.changes) : ""));
-    const head = el("tr", {}, el("th", {}, "Section"), el("th", {}, "Headnote"), el("th", { class: "num" }, "Matters citing"), el("th", { class: "num" }, "Changes since 2023"));
+    const head = () => ["Section", "Headnote", numTh("Matters citing"), numTh("Changes since 2023")];
     if (sections.length) body.push(el("div", { class: "card" },
       el("h2", {}, `Sections cited by the record or changed since 2023 (${notable.length} of ${sections.length})`),
-      notable.length ? el("table", {}, head, notable.map(row)) : el("div", { class: "note" }, "None."),
-      el("details", {}, el("summary", {}, `All ${sections.length} sections`), el("table", {}, head.cloneNode(true), sections.map(row)))));
-    body.push(mattersCard(node, "Items citing this chapter or its sections"));
+      notable.length ? table("Sections cited by the record or changed since 2023", head(), notable.map(row)) : el("div", { class: "note" }, "None."),
+      el("details", {}, el("summary", {}, `All ${sections.length} sections`), table(`All sections of chapter ${node.chapter || node.label}`, head(), sections.map(row)))));
+    body.push(mattersCard(node, "Matters citing this chapter or its sections"));
   } else {
     if (node.changes && node.changes.length) body.push(el("div", { class: "card" },
-      el("h2", {}, `Changed by the legislature since 2023 (${node.changes.length})`), changesTable(node.changes, false)));
+      el("h2", {}, `Changed by the Legislature since 2023 (${node.changes.length})`), changesTable(`Changes to ${node.label} since 2023`, node.changes, false)));
     if (fetched) {
       const subdivisions = node.subdivisions || [];
       // Closed by default: a long section is easier to scan as a list of headnotes. The
@@ -930,7 +1194,7 @@ function renderStatute(node) {
       const blocks = subdivisions.map((d) => el("details", { class: "subd" + (node.focus === d.id ? " focus" : ""), id: node.focus === d.id ? "focusSubd" : null,
           open: node.focus === d.id || subdivisions.length === 1 ? "" : null },
         el("summary", {}, el("b", {}, `Subd. ${d.number}. `, d.headnote || ""), " ", statusPill(d.status), " ",
-          d.matters ? el("span", { class: "pill" }, `cited by ${plural(d.matters, "matter")}`) : null,
+          d.matters ? el("span", { class: "pill" }, `Cited by ${plural(d.matters, "matter")}`) : null,
           el("span", { class: "preview" }, clip(d.text, d.headnote ? 90 : 130))),
         el("div", { class: "text" }, d.text || "")));
       const toggle = el("button", { class: "btn small", type: "button", onclick: () => {
@@ -947,7 +1211,7 @@ function renderStatute(node) {
           node.history ? el("div", { class: "note" }, "History: " + node.history) : null));
       }
     }
-    body.push(mattersCard(node, "Items citing this section"));
+    body.push(mattersCard(node, "Matters citing this section"));
     const links = [["Ordinances citing it", node.ordinances], ["Refers to", node.refers_to], ["Referred to by", node.referred_by]].filter(([, list]) => list && list.length);
     if (links.length) body.push(el("div", { class: "card" }, el("h2", {}, "Links in the law"),
       links.map(([title, list]) => [el("h3", {}, title), el("div", { class: "chips" }, list.map((item) => nodeLink(item.id, item.label + (item.states_authority ? " (states its authority)" : ""))))])));
@@ -966,12 +1230,12 @@ function renderSessionLaw(node) {
       node.bill_node ? el("div", { class: "meta" }, node.bill_node.title) : null,
       node.summary ? el("details", {}, el("summary", {}, "What the act says it relates to"), el("div", { class: "text" }, node.summary)) : null),
     node.changes && node.changes.length ? el("div", { class: "card" },
-      el("h2", {}, `Statutes it changed, among the chapters fetched (${node.changes.length})`), changesTable(node.changes, true)) : null,
+      el("h2", {}, `Statutes it changed, among the chapters fetched (${node.changes.length})`), changesTable(`Statutes changed by ${node.label}`, node.changes, true)) : null,
     el("div", { class: "card" },
-      el("h2", {}, `Items citing this law (${node.total})`),
-      node.citations && node.citations.length ? el("table", {}, el("tr", {}, el("th", {}, "Item"), el("th", {}, "As cited")),
-        node.citations.map((c) => el("tr", {}, el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ file: c.file_number }) }, c.file_number)), el("td", {}, c.citation))))
-        : el("div", { class: "note" }, "No item in the record cites it by chapter number.")));
+      el("h2", {}, `Matters citing this law (${node.total})`),
+      node.citations && node.citations.length ? table(`Matters citing ${node.label}`, ["Matter", "As cited"],
+        node.citations.map((c) => el("tr", {}, el("td", { class: "nowrap" }, matterLink(c.file_number)), el("td", {}, c.citation))))
+        : el("div", { class: "note" }, "No matter in the record cites it by chapter number.")));
   $("drawer").scrollTop = 0;
 }
 function renderOrdinance(node) {
@@ -980,17 +1244,17 @@ function renderOrdinance(node) {
       el("h2", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR.statute}` }), " ", node.number ? `Ordinance ${node.number}` : node.label),
       node.title ? el("div", { class: "title" }, node.title) : null,
       node.fetched ? el("div", { class: "meta" }, [node.category, node.adopted ? "adopted " + fmtDate(node.adopted) : null, node.amended ? "last amended " + fmtDate(node.amended) : null].filter(Boolean).join(" · "))
-        : el("div", { class: "warn" }, "The record cites this ordinance number, but the county's ordinance pages list no ordinance with it."),
-      node.notice ? el("div", { class: "warn" }, node.notice) : null,
-      el("div", { class: "meta" }, outLink(node.url, "Read it on the county's website"), node.pdf_url ? [" · ", outLink(node.pdf_url, "PDF copy")] : null)),
+        : alertBox("warn", "The record cites this ordinance number, but the county's ordinance pages list no ordinance with it."),
+      node.notice ? alertBox("info", node.notice) : null,
+      el("div", { class: "meta" }, outLink(node.url, "Read it on the county's website"), node.pdf_url ? [" · ", outLink(node.pdf_url, `${node.number ? "Ordinance " + node.number : "Ordinance"} (PDF)`)] : null)),
     node.sections && node.sections.length ? readerCard(node, "ordinance") : null,
     node.statutes && node.statutes.length ? el("div", { class: "card" },
       el("h2", {}, `Statutes it cites (${node.statutes.length})`),
-      el("table", {}, el("tr", {}, el("th", {}, "Statute"), el("th", {}, "Headnote"), el("th", {}, ""), el("th", { class: "num" }, "Changes since 2023")),
-        node.statutes.map((s) => el("tr", {}, el("td", { style: "white-space:nowrap" }, nodeLink(s.id, s.label.replace("Minn. Stat. ", ""))),
-          el("td", {}, s.headnote || "", " ", statusPill(s.status), s.status == null ? el("span", { class: "pill" }, "not fetched or not found") : null),
-          el("td", {}, s.states_authority ? "cited as its authority" : ""), el("td", { class: "num" }, s.changes ? String(s.changes) : ""))))) : null,
-    mattersCard(node, "Items citing this ordinance"),
+      table(`Statutes cited by ${node.number ? "Ordinance " + node.number : node.label}`, ["Statute", "Headnote", "Authority", numTh("Changes since 2023")],
+        node.statutes.map((s) => el("tr", {}, el("td", { class: "nowrap" }, nodeLink(s.id, s.label.replace("Minn. Stat. ", ""))),
+          el("td", {}, s.headnote || "", " ", statusPill(s.status), s.status == null ? el("span", { class: "pill" }, "Not fetched or not found") : null),
+          el("td", {}, s.states_authority ? "Cited as its authority" : ""), el("td", { class: "num" }, s.changes ? String(s.changes) : ""))))) : null,
+    mattersCard(node, "Matters citing this ordinance"),
     node.sections && node.sections.length ? el("div", { class: "card" }, el("h2", {}, "Text"),
       node.sections.map((s, i) => el("details", { open: i === 0 ? "" : null }, el("summary", {}, s.heading || "Opening"), el("div", { class: "text" }, s.text)))) : null);
   $("drawer").scrollTop = 0;
@@ -999,33 +1263,33 @@ function renderBill(node) {
   setKids($("drawerBody"), 
     el("div", { class: "card" },
       el("h2", {}, el("span", { class: "swatch", style: `background:${TYPE_COLOR.statute}` }), " ", node.identifier, " ", el("span", { class: "pill" }, node.session),
-        " ", node.law ? el("span", { class: "pill" }, "became law") : null),
+        " ", node.law ? el("span", { class: "pill" }, "Became law") : null),
       el("div", { class: "title" }, node.title),
       el("div", { class: "meta" }, [node.chamber, node.sponsors ? "chief author " + node.sponsors : null, node.subjects].filter(Boolean).join(" · ")),
       node.law ? el("div", { class: "meta" }, "Enacted as ", nodeLink(node.law.id, node.law.label)) : null,
       node.companions.length ? el("div", { class: "meta" }, "Companion: ", node.companions.map((c) => [nodeLink(c.id, c.identifier), " "])) : null,
       el("div", { class: "meta" }, outLink(node.url, "Bill page at the Revisor's office"), " · ", outLink(node.openstates_url, "Open States"))),
     el("div", { class: "card" }, el("h2", {}, `Actions (${node.actions.length})`),
-      el("table", {}, el("tr", {}, el("th", {}, "Date"), el("th", {}, "Chamber"), el("th", {}, "Action")),
-        node.actions.map((a) => el("tr", {}, el("td", { style: "white-space:nowrap" }, fmtDate(a.date)), el("td", {}, a.chamber || ""), el("td", {}, a.description))))));
+      table(`Actions on ${node.identifier}`, ["Date", "Chamber", "Action"],
+        node.actions.map((a) => el("tr", {}, el("td", { class: "nowrap" }, fmtDate(a.date)), el("td", {}, a.chamber || ""), el("td", {}, a.description))))));
   $("drawer").scrollTop = 0;
 }
 
 // Sessions as columns, stacked by what was done. Select a column to list that session.
-const ACTION_COLORS = { Amended: "var(--series-1)", New: "var(--series-2)", Repealed: "var(--series-3)", Other: "var(--neutral-1)" };
+const ACTION_COLORS = { Amended: SERIES[0], New: SERIES[1], Repealed: SERIES[2], Other: "var(--neutral-1)" };
 function changesChart(data, onSelect) {
   const years = data.years, max = Math.max(...years.map((y) => y.total), 1);
   const step = max <= 12 ? 2 : max <= 30 ? 5 : max <= 60 ? 10 : max <= 150 ? 25 : 50, top = Math.ceil(max / step) * step;
-  const left = 40, colW = 84, barW = 26, plotH = 150, topPad = 18, width = left + years.length * colW + 12, height = topPad + plotH + 28;
+  const left = 48, colW = 88, barW = 28, plotH = 160, topPad = 22, width = left + years.length * colW + 12, height = topPad + plotH + 32;
   const y = (n) => topPad + plotH - (n / top) * plotH;
-  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Changes to cited statute sections, per session, by kind of change" });
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": "Changes to cited statute sections, per session, by kind of change. The numbers are in the table below the chart." });
   for (let tick = 0; tick <= top; tick += step) {
     root.append(svg("line", { x1: left, x2: width - 8, y1: y(tick), y2: y(tick), stroke: tick ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }),
-      svg("text", { x: left - 8, y: y(tick) + 4, "text-anchor": "end", class: "muted", style: "font-variant-numeric:tabular-nums" }, String(tick)));
+      svg("text", { x: left - 8, y: y(tick) + 5, "text-anchor": "end", class: "muted", style: "font-variant-numeric:tabular-nums" }, String(tick)));
   }
   years.forEach((year, i) => {
     const x = left + i * colW + (colW - barW) / 2, present = data.actions.filter((a) => year.counts[a]);
-    const column = svg("g", {}, svg("rect", { x: left + i * colW, y: topPad - 14, width: colW, height: plotH + 40, class: "hitarea" }));
+    const column = svg("g", {}, svg("rect", { x: left + i * colW, y: topPad - 18, width: colW, height: plotH + 48, class: "hitarea" }));
     let stacked = 0;
     present.forEach((action, n) => {
       const y0 = y(stacked), y1 = y(stacked + year.counts[action]);
@@ -1034,16 +1298,20 @@ function changesChart(data, onSelect) {
       column.append(svg("path", { d: `M${x},${y1 + h} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r} h${barW - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} z`, fill: ACTION_COLORS[action] }));
     });
     column.append(svg("text", { x: x + barW / 2, y: y(year.total) - 6, "text-anchor": "middle", class: "strong" }, String(year.total)),
-      svg("text", { x: x + barW / 2, y: topPad + plotH + 18, "text-anchor": "middle", class: year.year === data.year ? "strong" : "" }, String(year.year)));
-    if (year.year === data.year) column.append(svg("rect", { x: x - 6, y: topPad + plotH + 23, width: barW + 12, height: 3, rx: 1.5, fill: "var(--ink)" }));
+      svg("text", { x: x + barW / 2, y: topPad + plotH + 20, "text-anchor": "middle", class: year.year === data.year ? "strong" : "muted" }, String(year.year)));
+    if (year.year === data.year) column.append(svg("rect", { x: x - 6, y: topPad + plotH + 26, width: barW + 12, height: 3, rx: 1.5, fill: "var(--ink)" }));
     clickable(column, () => onSelect(year.year));
     root.append(withTip(column, `${year.total} changes in ${year.year}`, [...present.slice().reverse().map((a) => `${year.counts[a]}  ${a.toLowerCase()}`), "Select to list them"]));
   });
   const legend = el("div", { class: "legend" }, data.actions.map((a) => el("span", {}, el("span", { class: "swatch", style: `border-radius:2px;background:${ACTION_COLORS[a]}` }), a)));
-  return el("div", {}, legend, el("div", { class: "chart" }, root));
+  return el("div", {}, legend, el("div", { class: "chart" }, root),
+    chartData("Changes per session, by kind of change", ["Session", ...data.actions, "Total"],
+      years.map((y) => [y.year, ...data.actions.map((a) => y.counts[a] || 0), y.total]), "changes-by-session.csv",
+      [...data.actions.map((_, i) => i + 1), data.actions.length + 1]));
 }
 async function loadChanges(year) {
-  const data = await api("/api/changes", { year, scope: $("lawScope").value });
+  let data;
+  try { data = await api("/api/changes", { year, scope: $("lawScope").value }); } catch (error) { setKids($("lawChart"), alertBox("error", `The changes could not be loaded: ${error.message} Reload the page to try again.`)); return; }
   $("lawMissing").classList.toggle("hidden", data.available);
   $("lawBody").classList.toggle("hidden", !data.available);
   if (!data.available) return;
@@ -1053,16 +1321,15 @@ async function loadChanges(year) {
     el("div", { class: "note" }, "The chart counts changes to sections that the record or an ordinance cites. Each row of the state's table is one change: a section or subdivision that a session law created, amended or repealed."));
   setKids($("lawChanges"), 
     el("h3", {}, `${data.year} session: ${data.total.toLocaleString()} changes` + (data.scope === "cited" ? " to cited sections, most relied on first" : " in the chapters fetched, most relied on first")),
-    data.changes.length ? changesTable(data.changes, true) : el("div", { class: "note" }, "None."),
+    data.changes.length ? changesTable(`Changes in the ${data.year} session`, data.changes, true) : el("div", { class: "note" }, "None."),
     data.total > data.changes.length ? el("div", { class: "note" }, `The first ${data.changes.length} are listed.`) : null,
-    el("div", { class: "note" }, "This says that the law under an item moved, not what the move means: that is for the County Attorney's Office. Where a section gives no date, an act takes effect on August 1 after its enactment, or July 1 for an appropriation, under Minn. Stat. § 645.02."));
+    el("div", { class: "note" }, "This shows that the law under a matter changed, not what the change means. That is for the County Attorney's Office to decide. Where a section gives no date, an act takes effect on August 1 after its enactment, or July 1 for an appropriation, under Minn. Stat. § 645.02."));
   $("lawCheckTitle").textContent = `Citations to check (${data.to_check.length})`;
-  setKids($("lawCheck"), data.to_check.length ? el("table", {},
-    el("tr", {}, ["Item", "Cites", "", "As published by the Revisor", "Last action"].map((h) => el("th", {}, h))),
+  setKids($("lawCheck"), data.to_check.length ? table("Citations to check", ["Matter", "Cites", "Status", "As published by the Revisor", "Last action"],
     data.to_check.map((c) => el("tr", {},
-      el("td", { style: "white-space:nowrap" }, el("button", { class: "filelink", type: "button", onclick: () => openMatter({ id: c.matter }) }, c.file_number), el("div", { class: "meta" }, clip(c.title, 60))),
-      el("td", { style: "white-space:nowrap" }, nodeLink(c.statute, c.label.replace("Minn. Stat. ", ""))), el("td", {}, el("span", { class: "pill alert" }, c.status)),
-      el("td", {}, c.note || "No such section in the chapter."), el("td", { style: "white-space:nowrap" }, fmtDate(c.last_action)))))
+      el("td", { class: "nowrap" }, matterLink(c.file_number, { id: c.matter }), el("div", { class: "meta" }, clip(c.title, 60))),
+      el("td", { class: "nowrap" }, nodeLink(c.statute, c.label.replace("Minn. Stat. ", ""))), el("td", {}, el("span", { class: "pill alert-pill" }, cap(c.status))),
+      el("td", {}, c.note || "No such section in the chapter."), el("td", { class: "nowrap" }, fmtDate(c.last_action)))))
     : el("div", { class: "note" }, "Every cited section is in force."));
 }
 let lawLoaded = false;
@@ -1070,34 +1337,37 @@ async function loadLaw() {
   if (lawLoaded) return;
   lawLoaded = true;
   const law = META.law;
-  if (law) $("lawSub").textContent = `${law.sections.toLocaleString()} sections in ${law.chapters} chapters of the ${law.edition} Minnesota Statutes: every chapter that an item in the record or a county ordinance cites. ` +
-    "After each session the state publishes which sections it created, amended or repealed; here that list is joined to the record.";
+  if (law) $("lawSub").textContent = `${law.sections.toLocaleString()} sections in ${law.chapters} chapters of the ${law.edition} Minnesota Statutes: every chapter that a matter in the record or a county ordinance cites. ` +
+    "After each session, the state publishes which sections it created, amended or repealed. Here that list is joined to the record.";
   await loadChanges();
-  const ordinances = (await api("/api/ordinances")).ordinances;
+  let ordinances;
+  try { ordinances = (await api("/api/ordinances")).ordinances; } catch (error) { lawLoaded = false; setKids($("lawOrdinances"), alertBox("error", `The ordinances could not be loaded: ${error.message} Reload the page to try again.`)); return; }
   $("lawOrdTitle").textContent = `County ordinances (${ordinances.length})`;
-  setKids($("lawOrdinances"), ordinances.length ? el("table", {},
-    el("tr", {}, el("th", {}, "No."), el("th", {}, "Ordinance"), el("th", {}, "Last amended"), el("th", { class: "num" }, "Matters citing"), el("th", { class: "num" }, "Statutes cited")),
+  setKids($("lawOrdinances"), ordinances.length ? table("County ordinances", ["Number", "Ordinance", "Last amended", numTh("Matters citing"), numTh("Statutes cited")],
     ordinances.map((o) => el("tr", {}, el("td", {}, o.number || ""),
-      el("td", {}, nodeLink(o.id, o.title), o.notice ? [" ", el("span", { class: "pill" }, "being revised")] : null,
-        o.statutes_not_in_force ? [" ", el("span", { class: "pill alert" }, `${o.statutes_not_in_force} cited statute${o.statutes_not_in_force === 1 ? "" : "s"} not in force`)] : null,
+      el("td", {}, nodeLink(o.id, o.title), o.notice ? [" ", el("span", { class: "pill" }, "Being revised")] : null,
+        o.statutes_not_in_force ? [" ", el("span", { class: "pill alert-pill" }, `${o.statutes_not_in_force} cited statute${o.statutes_not_in_force === 1 ? "" : "s"} not in force`)] : null,
         el("div", { class: "meta" }, o.category)),
-      el("td", { style: "white-space:nowrap" }, fmtDate(o.amended) || (o.adopted ? "adopted " + fmtDate(o.adopted) : "")),
+      el("td", { class: "nowrap" }, fmtDate(o.amended) || (o.adopted ? "adopted " + fmtDate(o.adopted) : "")),
       el("td", { class: "num" }, o.matters ? String(o.matters) : ""), el("td", { class: "num" }, o.statutes ? String(o.statutes) : ""))))
     : el("div", { class: "note" }, "No ordinances have been fetched."));
   if (law && law.bills) {
     law.bill_sessions.forEach((s) => $("billSession").append(el("option", {}, s)));
-    $("billSub").textContent = `${law.bills.toLocaleString()} bills from the sessions since 2023, from Open States. Titles are the legislature's short descriptions; a bill that affects the county without naming it will not match the county's name.`;
+    $("billSub").textContent = `${law.bills.toLocaleString()} bills from the sessions since 2023, from Open States. Titles are the Legislature's short descriptions. A bill that affects the county without naming it will not match the county's name.`;
     $("billQ").value = META.jurisdiction.split(" ")[0];
     loadBills();
   } else setKids($("billTable"), el("div", { class: "note" }, "No bills have been fetched."));
 }
 async function loadBills() {
-  const data = await api("/api/bills", { q: $("billQ").value.trim(), session: $("billSession").value, enacted: $("billEnacted").checked ? "1" : "" });
-  setKids($("billTable"), 
+  let data;
+  try { data = await api("/api/bills", { q: $("billQ").value.trim(), session: $("billSession").value, enacted: $("billEnacted").checked ? "1" : "" }); }
+  catch (error) { setKids($("billTable"), alertBox("error", `The bills could not be loaded: ${error.message} Try again.`)); return; }
+  announce(`${data.more ? "More than " : ""}${plural(data.bills.length, "bill")}.`);
+  setKids($("billTable"),
     el("div", { class: "note" }, `${data.more ? "More than " : ""}${plural(data.bills.length, "bill")}, latest action first.`),
-    data.bills.length ? el("table", {}, el("tr", {}, ["Bill", "Title", "Author", "Last action"].map((h) => el("th", {}, h))),
+    data.bills.length ? table("State bills, latest action first", ["Bill", "Title", "Author", "Last action"],
       data.bills.map((b) => el("tr", {},
-        el("td", { style: "white-space:nowrap" }, nodeLink(b.id, b.identifier), el("div", { class: "meta" }, b.session)),
+        el("td", { class: "nowrap" }, nodeLink(b.id, b.identifier), el("div", { class: "meta" }, b.session)),
         el("td", {}, clip(b.title, 220), b.law ? [" ", nodeLink(b.law, b.law_label)] : null), el("td", {}, b.sponsors || ""),
         el("td", {}, fmtDate(b.last_action), el("div", { class: "meta" }, clip(b.last_action_text, 60)))))) : null);
 }
@@ -1106,12 +1376,217 @@ $("lawScope").onchange = () => loadChanges($("lawYear").value);
 $("billForm").addEventListener("submit", (event) => { event.preventDefault(); loadBills(); });
 $("billSession").onchange = loadBills; $("billEnacted").onchange = loadBills;
 
-const metaReady = loadMeta().catch((error) => ($("metaLine").textContent = "Could not load: " + error.message));
-if (location.hash === "#coming-up") showTab("queues");
-if (location.hash === "#law") showTab("law");
-// Deep links: ?open=26-0333 opens an item, ?node=mnstat:383B.158 opens a statute, ordinance, session law or bill,
-// ?q=... runs a search, ?q=...&ask=1 asks, ?q=...&topic=1 charts the topic; #law and #coming-up open those tabs.
+// --- explore: themes over time, storylines, and a meeting by theme ---------------------
+const HEAT = [1, 2, 3, 4, 5].map((n) => `var(--heat-${n})`);
+const monthName = (label) => new Date(label + "-01T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long" });
+const BASIS = { name: "same name from the model", agreement: "same agreement number", reference: "linked in the record", revision: "a revision" };
+const basisWords = (basis) => cap((basis || "").split(", ").filter(Boolean).map((b) => BASIS[b] || b).join("; "));
+function themePill(theme) {
+  return el("a", { class: "pill", href: here({ theme: theme.id }) + "#explore", onclick: follow(() => { showTab("explore"); openTheme(theme.id); }) }, theme.name);
+}
+function storylineLink(id, label, attrs) {
+  return el("a", { href: here({ storyline: id }), onclick: follow(() => openStoryline(id)), ...attrs }, label);
+}
+function openStoryline(id) {
+  openDrawer(() => { drawerLoading(); api("/api/storyline", { id }).then(renderStoryline).catch(drawerError); });
+}
+// How long ago something last came up, measured from the end of the record, not from today.
+function quiet(last, recordEnds) {
+  const days = Math.round((new Date(recordEnds) - new Date(last)) / 864e5);
+  return days <= 120 ? "active in the last 4 months of the record" : `last before a board or committee ${Math.round(days / 30)} months before the record ends`;
+}
+let EXPLORE = null, exploreReady = null;
+function loadExplore() { return exploreReady || (exploreReady = fetchExplore()); }
+async function fetchExplore() {
+  try { EXPLORE = await api("/api/explore"); } catch (error) {
+    exploreReady = null;
+    setKids($("exploreSub"), alertBox("error", `The themes could not be loaded: ${error.message} Reload the page to try again.`));
+    return;
+  }
+  $("exploreMissing").classList.toggle("hidden", EXPLORE.available);
+  $("exploreBody").classList.toggle("hidden", !EXPLORE.available);
+  if (!EXPLORE.available) return;
+  $("exploreSub").textContent = `Matters addressed by the board or a committee are read by ${EXPLORE.model} and tagged with up to 3 of ` +
+    `${EXPLORE.themes.length} themes. Within each theme, matters that belong to the same project, program or contract are grouped into ` +
+    `a storyline. Select a theme to explore storylines or matters.`;
+  renderThemeGrid();
+  loadMeeting();
+}
+function heatSteps(max) {
+  // Five steps that double: 1-b, to 2b, to 4b, to 8b, and more.
+  const base = [1, 2, 3, 5, 10, 20].find((b) => b * 8 >= max) || Math.ceil(max / 8);
+  const tops = [base, base * 2, base * 4, base * 8, Infinity];
+  return { tops, of: (n) => tops.findIndex((top) => n <= top) };
+}
+function renderThemeGrid(selected) {
+  const months = EXPLORE.months, themes = EXPLORE.themes;
+  const max = Math.max(1, ...themes.flatMap((t) => Object.values(t.months)));
+  const steps = heatSteps(max);
+  const left = 320, cellW = 14, cellH = 24, gap = 2, top = 38, right = 72;
+  const areas = [...new Set(themes.map((t) => t.area))];
+  const rows = [];  // area headings and themes, top to bottom
+  areas.forEach((area) => { rows.push({ area }); themes.filter((t) => t.area === area).forEach((theme) => rows.push({ theme })); });
+  const rowY = [];
+  let cursor = top;
+  rows.forEach((row) => { rowY.push(cursor); cursor += row.area ? 32 : cellH + gap; });
+  const width = left + months.length * (cellW + gap) + right, height = cursor + 6;
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": "Matters before a board or committee each month, by theme. The numbers are in the table below the chart." });
+  const x = (i) => left + i * (cellW + gap);
+  months.forEach((label, i) => {
+    if (label.endsWith("-01") || i === 0) root.append(svg("text", { x: x(i), y: 16, class: "muted" }, label.slice(0, 4)),
+      svg("line", { x1: x(i) - 1, x2: x(i) - 1, y1: 24, y2: height - 6, stroke: "var(--grid)", "stroke-width": 1 }));
+  });
+  root.append(svg("text", { x: width - 4, y: 16, "text-anchor": "end", class: "muted" }, "Matters"));
+  rows.forEach((row, r) => {
+    const y = rowY[r];
+    if (row.area) { root.append(svg("text", { x: 0, y: y + 22, class: "strong" }, row.area)); return; }
+    const theme = row.theme, chosen = selected === theme.id;
+    const label = svg("g", {}, svg("rect", { x: 0, y, width: left - 6, height: cellH, class: "hitarea" }),
+      svg("text", { x: left - 10, y: y + 17, "text-anchor": "end", class: chosen ? "strong" : "" }, clip(theme.name, 36)));
+    clickable(label, () => openTheme(theme.id));
+    root.append(withTip(label, theme.name, [theme.description, `${plural(theme.matters, "matter")}, ${plural(theme.storylines, "storyline")}`]));
+    if (chosen) root.append(svg("rect", { x: left - 4, y: y - 1, width: months.length * (cellW + gap) + 2, height: cellH + 2, fill: "none", stroke: "var(--ink)", "stroke-width": 1.5, rx: 3 }));
+    months.forEach((month, i) => {
+      const n = theme.months[month] || 0;
+      const cell = svg("rect", { x: x(i), y, width: cellW, height: cellH, rx: 2, fill: n ? HEAT[steps.of(n)] : "var(--wash)" });
+      if (n) { clickable(cell, () => openTheme(theme.id, month)); withTip(cell, `${plural(n, "matter")}`, [theme.name, monthName(month), "Select to list"]); }
+      root.append(cell);
+    });
+    root.append(svg("text", { x: width - 4, y: y + 17, "text-anchor": "end", style: "font-variant-numeric:tabular-nums" }, theme.matters.toLocaleString()));
+  });
+  setKids($("themeGrid"), root);
+  setKids($("exploreLegend"), el("span", { class: "ramp" }, "Matters in a month:", el("i", { style: "background:var(--wash)" }), "None",
+    steps.tops.map((topOf, n) => [el("i", { style: `background:${HEAT[n]}` }), topOf === Infinity ? `${steps.tops[n - 1] + 1}+` : n ? `${steps.tops[n - 1] + 1}–${topOf}` : topOf === 1 ? "1" : `1–${topOf}`])));
+  setKids($("themeTable"), table("Themes", ["Theme", numTh("Matters"), numTh("Storylines"), "Busiest month"],
+    themes.map((t) => { const busiest = Object.entries(t.months).sort((a, b) => b[1] - a[1])[0];
+      return el("tr", {}, el("td", {}, el("a", { href: here({ theme: t.id }) + "#explore", onclick: follow(() => openTheme(t.id)) }, t.name), el("div", { class: "meta" }, t.area)),
+        el("td", { class: "num" }, t.matters.toLocaleString()), el("td", { class: "num" }, String(t.storylines)), el("td", {}, busiest ? `${monthName(busiest[0])} (${busiest[1]})` : "")); })),
+    csvLink("themes-by-month.csv", ["Area", "Theme", "Month", "Matters"],
+      themes.flatMap((t) => months.map((m) => [t.area, t.name, m, t.months[m] || 0]))));
+}
+let THEME = null;
+async function openTheme(id, month) {
+  await loadExplore();
+  if (!EXPLORE || !EXPLORE.available) return;
+  $("themeCard").classList.remove("hidden");
+  $("themeTitle").textContent = "Loading…";
+  renderThemeGrid(id);
+  try { THEME = await api("/api/theme", { id }); } catch (error) { $("themeTitle").textContent = "This theme could not be loaded"; setKids($("themeSub"), alertBox("error", error.message)); return; }
+  THEME.month = month || null; THEME.show = "all"; THEME.allStories = false;
+  renderTheme();
+  $("themeCard").scrollIntoView({ behavior: MOTION, block: "start" });
+  $("themeTitle").focus({ preventScroll: true });
+}
+const STORY_ROWS = 14;
+function renderTheme() {
+  const t = THEME, inStory = t.matters.filter((m) => m.storyline), alone = t.matters.filter((m) => !m.storyline);
+  $("themeTitle").textContent = t.name;
+  $("themeArea").textContent = t.area;
+  $("themeSub").textContent = `${t.description}. ${plural(t.matters.length, "matter")}: ${inStory.length.toLocaleString()} in ${plural(t.storylines.length, "storyline")}, ${alone.length.toLocaleString()} standalone.`;
+  $("storyHead").textContent = `Storylines (${t.storylines.length})`;
+  $("storySub").textContent = t.storylines.length ? "One row per storyline, largest first. Each dot is a matter, placed when it first came before a board or committee." : "";
+  const shown = t.allStories ? t.storylines : t.storylines.slice(0, STORY_ROWS);
+  setKids($("storyChart"), t.storylines.length ? [storylineChart(t, shown),
+    chartData(`Storylines under ${t.name}`, ["Storyline", "Matters", "First heard", "Last heard"],
+      t.storylines.map((s) => [s.name, s.matters, fmtDate(s.first), fmtDate(s.last)]), "storylines.csv", [1])]
+    : el("div", { class: "note" }, "No storylines here. Every matter under this theme came up on its own."));
+  setKids($("storyMore"), t.storylines.length > STORY_ROWS ? el("button", { class: "btn small", type: "button", onclick: () => { t.allStories = !t.allStories; renderTheme(); } },
+    t.allStories ? `Show the ${STORY_ROWS} largest` : `Show all ${t.storylines.length} storylines`) : null);
+  const choice = (key, label, n) => el("button", { class: "btn small", type: "button", "aria-pressed": String(t.show === key), onclick: () => { t.show = key; renderTheme(); } }, `${label} (${n.toLocaleString()})`);
+  const inMonth = (m) => !t.month || m.days.some((d) => d.startsWith(t.month));
+  setKids($("themeChoices"), choice("all", "All", t.matters.filter(inMonth).length), choice("story", "In a storyline", inStory.filter(inMonth).length), choice("alone", "On their own", alone.filter(inMonth).length),
+    t.month ? [el("span", { class: "pill" }, `Before a board or committee in ${monthName(t.month)}`), el("button", { class: "btn small", type: "button", onclick: () => { t.month = null; renderTheme(); } }, "Every month")] : null);
+  const rows = (t.show === "story" ? inStory : t.show === "alone" ? alone : t.matters).filter(inMonth).slice().reverse();
+  const names = Object.fromEntries(t.storylines.map((s) => [s.id, s.name]));
+  setKids($("themeItems"), rows.length ? table(`Matters under ${t.name}`, ["First heard", "Matter", "What it does", "Storyline", "Status"],
+    rows.slice(0, 300).map((m) => el("tr", {},
+      el("td", { class: "nowrap" }, fmtDate(m.days[0])),
+      el("td", { class: "nowrap" }, matterLink(m.file_number, { id: m.id })),
+      el("td", {}, m.gist || clip(m.title, 200)),
+      el("td", {}, m.storyline ? storylineLink(m.storyline, clip(names[m.storyline], 48)) : ""),
+      el("td", {}, m.status || "")))) : el("div", { class: "note" }, "Nothing matches."),
+    rows.length > 300 ? el("div", { class: "note" }, "The 300 most recent are listed.") : null);
+}
+// Rows are storylines, the horizontal axis is time over the whole record. The line runs from a
+// storyline's first matter to its last; a long line with many dots is a discussion that kept coming back.
+function storylineChart(theme, stories) {
+  const start = new Date(EXPLORE.record_starts.slice(0, 7) + "-01T00:00:00"), end = new Date(EXPLORE.record_ends + "T00:00:00");
+  const left = 320, plotW = EXPLORE.months.length * 16, rowH = 32, top = 28, right = 110;
+  const width = left + plotW + right, height = top + stories.length * rowH + 8;
+  const x = (iso) => left + Math.max(0, Math.min(1, (new Date(iso + "T00:00:00") - start) / (end - start))) * plotW;
+  const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": `Storylines under ${theme.name}, over time. The dates are in the table below the chart.` });
+  EXPLORE.months.forEach((label, i) => {
+    if (!label.endsWith("-01") && i) return;
+    const gx = x(label + "-01");
+    root.append(svg("text", { x: gx + 3, y: 16, class: "muted" }, label.slice(0, 4)), svg("line", { x1: gx, x2: gx, y1: 22, y2: height - 4, stroke: "var(--grid)", "stroke-width": 1 }));
+  });
+  if (theme.month) root.append(svg("rect", { x: x(theme.month + "-01"), y: 22, width: 16, height: height - 26, fill: "var(--wash)" }));
+  stories.forEach((story, r) => {
+    const y = top + r * rowH + rowH / 2, members = theme.matters.filter((m) => m.storyline === story.id && m.days.length);
+    const label = svg("g", {}, svg("rect", { x: 0, y: y - rowH / 2, width: left - 6, height: rowH, class: "hitarea" }),
+      svg("text", { x: left - 12, y: y + 5, "text-anchor": "end" }, clip(story.name, 34)));
+    clickable(label, () => openStoryline(story.id));
+    root.append(withTip(label, story.name, [`${plural(story.matters, "matter")}, ${fmtDate(story.first)} to ${fmtDate(story.last)}`, "Select to open the storyline"]));
+    if (story.first) root.append(svg("line", { x1: x(story.first), x2: x(story.last), y1: y, y2: y, stroke: "var(--axis)", "stroke-width": 2, "stroke-linecap": "round" }));
+    members.forEach((m) => {
+      const dot = svg("g", {}, svg("circle", { cx: x(m.days[0]), cy: y, r: 6, fill: "var(--series-1)", stroke: "var(--surface)", "stroke-width": 2 }),
+        svg("circle", { cx: x(m.days[0]), cy: y, r: 10, class: "hitarea" }));
+      clickable(dot, () => openMatter({ id: m.id }));
+      root.append(withTip(dot, m.file_number, [m.gist || clip(m.title, 120), `First before a board or committee ${fmtDate(m.days[0])}`, m.status]));
+    });
+    root.append(svg("text", { x: left + plotW + 10, y: y + 5, class: "muted", style: "font-variant-numeric:tabular-nums" }, plural(story.matters, "matter")));
+  });
+  return el("div", { class: "chart" }, root);
+}
+function renderStoryline(s) {
+  $("drawerBody").replaceChildren(
+    el("div", { class: "card" },
+      el("h2", {}, s.name),
+      el("div", { class: "meta" }, `Storyline of ${plural(s.matters.length, "matter")}` + (s.first ? `, ${fmtDate(s.first)} to ${fmtDate(s.last)}; ${quiet(s.last, s.record_ends)}` : "")),
+      el("div", { class: "chips", style: "margin-top:8px;gap:6px" }, s.themes.map((t) => themePill(t))),
+    el("div", { class: "card" },
+      table(`Matters in the storyline ${s.name}`, ["First heard", "Matter", "What it does", "Status", "Why it is here"],
+        s.matters.map((m) => el("tr", {},
+          el("td", { class: "nowrap" }, fmtDate(m.days[0])),
+          el("td", { class: "nowrap" }, matterLink(m.file_number, { id: m.id })),
+          el("td", {}, m.gist || clip(m.title, 200)),
+          el("td", {}, m.status || ""), el("td", { class: "meta" }, basisWords(m.basis)))))));
+  $("drawer").scrollTop = 0;
+}
+async function loadMeeting(id) {
+  let data;
+  try { data = await api("/api/meeting", { id }); } catch (error) { setKids($("meetingItems"), alertBox("error", error.message)); return; }
+  const pick = $("meetingPick");
+  if (!pick.options.length) data.meetings.forEach((m) => pick.append(el("option", { value: m.id }, `${fmtDate(m.date)} · ${m.body} · ${plural(m.items, "matter")}`)));
+  if (!data.meeting) { setKids($("meetingItems"), el("div", { class: "note" }, "No meetings have matters on their agendas yet.")); return; }
+  pick.value = data.meeting.id;
+  setKids($("meetingLink"), data.meeting.url ? outLink(data.meeting.url, "Open this meeting in Legistar") : null);
+  setKids($("meetingItems"), data.groups.map((group) => [
+    el("h3", {}, group.theme ? el("a", { href: here({ theme: group.theme }) + "#explore", onclick: follow(() => openTheme(group.theme)) }, group.name) : group.name, ` (${group.items.length})`),
+    group.items.map((item) => el("div", { class: "row" },
+      el("div", {}, matterLink(item.file_number, { id: item.id })),
+      el("div", {}, item.gist || clip(item.title, 200),
+        item.also.length ? el("div", { class: "meta" }, "Other themes: " + item.also.map((t) => t.name).join(", ")) : null,
+        item.storyline ? el("div", { class: "meta" }, "Storyline: ", storylineLink(item.storyline.id, clip(item.storyline.name, 70))) : null),
+      el("div", {}, el("span", { class: "pill" }, cap(item.action) || "On agenda"))))]));
+}
+$("meetingPick").onchange = () => loadMeeting($("meetingPick").value);
+
 const linked = new URLSearchParams(location.search);
+const metaReady = loadMeta().catch((error) => setKids($("loadError"), alertBox("error", `The page could not load the record: ${error.message} Reload the page to try again.`)));
+// The address picks the section: #explore, #ask, #coming-up or #law. Without one, the page
+// opens on Explore once something is filed under themes, and on Ask and search before that.
+const initial = tabOfHash(location.hash);
+if (initial && initial !== "explore") showTab(initial);
+metaReady.then(() => {
+  if (linked.get("theme")) { showTab("explore"); openTheme(linked.get("theme")); }
+  else if (initial === "explore" || (!initial && META.themes && !linked.get("q"))) showTab("explore");
+  else if (!initial && !linked.get("q")) showTab("ask");
+  if (linked.get("storyline")) openStoryline(linked.get("storyline"));
+});
+// Deep links: ?open=26-0333 opens a matter, ?node=mnstat:383B.158 opens a statute, ordinance, session law or bill,
+// ?q=... runs a search, ?q=...&ask=1 asks, ?q=...&topic=1 charts the topic; ?theme=affordable-housing opens a theme,
+// ?storyline=... a storyline. Links in the page carry these addresses, so they can be opened in a new tab.
 if (linked.get("open")) openMatter({ file: linked.get("open") });
 if (linked.get("node")) openNode(linked.get("node"));
 if (linked.get("law") && linked.get("anchor")) openLawText(linked.get("law"), linked.get("anchor"));

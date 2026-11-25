@@ -117,7 +117,9 @@ class Mirror:
         report = {"downloaded": 0, "unchanged": 0, "bytes": 0}
         for name in subdirectories:
             self._pull(self.volume_root / name, report)
-        log.info(
+        # The page looks every couple of minutes; only a look that fetched something is worth a line.
+        log.log(
+            logging.INFO if report["downloaded"] else logging.DEBUG,
             "volume %s -> %s: %s files downloaded (%.0f MB), %s unchanged, %.0fs",
             self.volume_root, self.local_root, report["downloaded"], report["bytes"] / 1e6, report["unchanged"], time.monotonic() - started,
         )  # fmt: skip

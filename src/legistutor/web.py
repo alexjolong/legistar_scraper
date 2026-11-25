@@ -10,6 +10,8 @@ is a single file with no external assets; this module is its JSON API:
 * ``/api/node``     a department, body, statute, session law, ordinance or bill, and what is connected to it
 * ``/api/queues``   what is coming to each body, and recent and upcoming meetings
 * ``/api/topic``    matters containing every word of a query, by quarter and department
+* ``/api/explore``  every theme the chat model filed matters under, by month; ``/api/theme`` one of them,
+  with its storylines; ``/api/storyline`` one storyline; ``/api/meeting`` one meeting's items by theme
 * ``/api/changes``  statutes the record relies on that a session changed, and citations that need a look
 * ``/api/law_text`` one section of a session law, with struck and inserted text marked
 * ``/api/law_ask``  a summary of one statute section, chapter or ordinance, or an answer to a
@@ -31,7 +33,7 @@ import threading
 import time
 import webbrowser
 from collections.abc import Callable, Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
@@ -39,6 +41,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import config, gold, lawnotes, llm, rag
+from . import themes as theme_filing
 from .embed import EmbeddingError
 from .embed import embedder as make_embedder
 from .law import chapter_sort_key
@@ -59,6 +62,7 @@ LAW_SOURCES = 3  # statute sections or ordinances added to a question about the 
 LAW_LEAD_MARGIN = 0.03
 CHANGE_ACTIONS = ("Amended", "New", "Repealed")  # Table 2 actions shown by name; the rest are "Other"
 BILL_LIMIT = 200
+MEETING_CHOICES = 120  # meetings offered in the page's list, latest first
 _LAST_ACTION = "coalesce((select max(o.date) from e_on_agenda o where o.src = m.id), m.intro_date)"
 
 
@@ -103,15 +107,21 @@ class App:
         embed_model: str,
         notes_dir: Path | None = None,
         summary_written: Callable[[Path], None] | None = None,
+        load: Callable[[], Searcher] | None = None,
     ) -> None:
-        self.searcher = searcher
         self.chat = chat
         self.client = client
         self.embed_model = embed_model
         self.notes_dir = notes_dir  # where the model's summaries of the law are kept; None keeps none
         self.summary_written = summary_written  # told of each summary file written, to copy it somewhere lasting
+        self.load = load  # builds a searcher over what is on disk now; None means the data never changes
         # One DuckDB connection is shared by the request threads.
         self.lock = threading.Lock()
+        self._adopt(searcher)
+
+    def _adopt(self, searcher: Searcher) -> None:
+        self.searcher = searcher
+        self.loaded_utc = datetime.now(UTC).isoformat(timespec="seconds")
         views = {row[0] for row in searcher.con.sql("select table_name from information_schema.tables").fetchall()}
         columns = {
             row[0]
@@ -121,6 +131,25 @@ class App:
         self.has_law = "text" in columns and "e_changed_by" in views
         self.has_ordinances = "t_ordinance_text" in views
         self.has_bills = "v_bill" in views
+        # What the chat model has filed under themes and storylines, if `legistutor themes` has run.
+        self.has_themes = theme_filing.attach(searcher.con, searcher.data_dir, self.client)
+        self.themes = {theme.id: theme for theme in theme_filing.read_themes()}
+
+    def reload(self) -> None:
+        """Read the data again, after a refresh. Questions are answered from the old copy
+        until the new one is ready, and the old one is kept if the new one cannot be read."""
+        if self.load is None:
+            return
+        searcher = self.load()  # the slow part, outside the lock
+        with self.lock:
+            old = self.searcher
+            self._adopt(searcher)
+        old.con.close()
+
+    def close(self) -> None:
+        """Close the DuckDB connection, once nothing else will ask the page for anything."""
+        with self.lock:
+            self.searcher.con.close()
 
     def _rows(self, sql: str, params: list[Any] | None = None) -> list[tuple]:
         with self.lock:
@@ -143,6 +172,7 @@ class App:
             "meetings": meetings,
             "passages": passages,
             "latest_meeting": latest,
+            "loaded_utc": self.loaded_utc,
             "chat_model": self.chat().model,
             "embed_model": self.embed_model,
             "bodies": column("select name from v_body where id in (select body from e_on_agenda) order by name"),
@@ -150,6 +180,7 @@ class App:
             "matter_types": column("select distinct matter_type from chunk where matter_type is not null order by 1"),
             "statuses": column("select distinct status from chunk where status is not null order by 1"),
             "law": self._law_meta(),
+            "themes": self.has_themes,
         }
 
     def _law_meta(self) -> dict[str, Any] | None:
@@ -213,7 +244,7 @@ class App:
         with self.lock:
             cards = self.searcher.cards([matter]) if matter else []
         if not cards:
-            raise NotFound(f"No matter {params.get('file') or params.get('id')!r}")
+            raise NotFound(f"No matter {params.get('file') or params.get('id')} is in the record. Check the file number and try again.")
         card = cards[0]
         # The item and its revisions travel together: 26-0333 is referred, 26-0333 R1 is adopted.
         relatives = [
@@ -234,6 +265,7 @@ class App:
             "neighbours": self._neighbours(matter),
             "sections": sections,
             "attachments": [{"name": name, "url": url} for name, url in attachments],
+            "tags": self._tags_of(matter),
         }
 
     def _neighbours(self, matter: str) -> list[dict[str, Any]]:
@@ -241,11 +273,11 @@ class App:
         matter_node = "m.id, 'matter', m.file_number, m.title"
         groups = [
             ("Requested by", "in", "select d.id, 'department', d.name, null from e_requested_by r join v_department d on d.id = r.dst where r.src = ?"),
-            ("Earlier items", "in", f"select {matter_node} || ' (' || r.kind || ')' from e_related_to r join v_matter m on m.id = r.src where r.dst = ? order by m.file_number"),
+            ("Earlier matters", "in", f"select {matter_node} || ' (' || r.kind || ')' from e_related_to r join v_matter m on m.id = r.src where r.dst = ? order by m.file_number"),
             ("Mentions", "in", f"select {matter_node} from e_references r join v_matter m on m.id = r.dst where r.src = ? order by m.file_number"),
             ("Heard by", "out", """select o.body, 'body', o.body_name, count(*) || case when count(*) = 1 then ' appearance' else ' appearances' end
                                    from e_on_agenda o where o.src = ? group by 1, 3 order by min(o.date)"""),
-            ("Later items", "out", f"select {matter_node} || ' (' || r.kind || ')' from e_related_to r join v_matter m on m.id = r.dst where r.src = ? order by m.file_number"),
+            ("Later matters", "out", f"select {matter_node} || ' (' || r.kind || ')' from e_related_to r join v_matter m on m.id = r.dst where r.src = ? order by m.file_number"),
             ("Mentioned by", "out", f"select {matter_node} from e_references r join v_matter m on m.id = r.src where r.dst = ? order by m.file_number"),
             ("Cites", "out", "select s.id, 'statute', v.label, null from e_cites c join v_statute s on s.id = c.dst join vertices v on v.id = s.id where c.src = ? order by s.number"),
             ("Cites session law", "out", "select v.id, 'session_law', v.label, c.citation from e_cites_law c join vertices v on v.id = c.dst where c.src = ? order by v.id"),
@@ -264,7 +296,7 @@ class App:
         node = params.get("id") or ""
         found = self._rows("select type, label from vertices where id = ?", [node])
         if not found:
-            raise NotFound(f"No node {node!r}")
+            raise NotFound(f"Nothing in the record has the ID {node}. Check the link and try again.")
         kind, label = found[0]
         if kind == "subdivision":  # shown inside its section
             return {**self.node({"id": node.split("#")[0]}), "focus": node}
@@ -272,7 +304,7 @@ class App:
             "department": ("requested by this department", "select src from e_requested_by where dst = ?", 1),
             # A chapter also answers for its sections.
             "statute": ("citing this statute", "select src from e_cites where dst = ? or dst in (select src from e_part_of where dst = ?)", 2),
-            "body": ("that came before this body", "select src from e_on_agenda where body = ?", 1),
+            "body": ("that came before this board or committee", "select src from e_on_agenda where body = ?", 1),
             "session_law": ("citing this session law", "select src from e_cites_law where dst = ?", 1),
             "ordinance": ("citing this ordinance", "select src from e_cites_ordinance where dst = ?", 1),
             "bill": ("", "select null where ? is null", 1),
@@ -728,6 +760,186 @@ class App:
             ],
         }
 
+    # --- themes and storylines ---------------------------------------------------------
+
+    def _theme_names(self, ids: list[str] | None) -> list[dict[str, str]]:
+        return [{"id": i, "name": self.themes[i].name} for i in ids or [] if i in self.themes]
+
+    def _tags_of(self, matter: str) -> dict[str, Any] | None:
+        """How one matter was filed: its gist, its themes, and the storyline it is part of."""
+        if not self.has_themes:
+            return None
+        filed = self._rows("select gist, themes, model from matter_tag where matter = ?", [matter])
+        story = self._rows(
+            "select storyline, name, (select count(*) from storyline_member x where x.storyline = s.storyline) from storyline_member s where matter = ?",
+            [matter],
+        )
+        if not filed and not story:
+            return None
+        return {
+            "gist": filed[0][0] if filed else None,
+            "themes": self._theme_names(filed[0][1]) if filed else [],
+            "model": filed[0][2] if filed else None,
+            "storyline": {"id": story[0][0], "name": story[0][1], "matters": story[0][2]} if story else None,
+        }
+
+    def explore(self) -> dict[str, Any]:
+        """Every theme, with the number of matters before a body in each month of the record."""
+        if not self.has_themes:
+            return {"available": False}
+        first, last = self._rows("select min(date), max(date) from v_meeting")[0]
+        months, (year, month) = [], (first.year, first.month)
+        while (year, month) <= (last.year, last.month):
+            months.append(f"{year}-{month:02d}")
+            year, month = (year, month + 1) if month < 12 else (year + 1, 1)
+        by_month: dict[str, dict[str, int]] = {}
+        for theme, label, count in self._rows(
+            """select t.theme, strftime(d.day, '%Y-%m'), count(distinct d.matter)
+               from (select matter, unnest(themes) as theme from matter_tag) t join matter_day d using (matter) group by 1, 2"""
+        ):
+            by_month.setdefault(theme, {})[label] = count
+        totals = dict(self._rows("select theme, count(*) from (select unnest(themes) as theme from matter_tag) group by 1"))
+        storylines = dict(
+            self._rows(
+                """select theme, count(distinct storyline) from (select storyline, unnest(themes) as theme from storyline_member) group by 1"""
+            )
+        )
+        filed, without, model, latest = self._rows(
+            "select count(*), count(*) filter (where len(themes) = 0), max(model), max(tagged_utc) from matter_tag"
+        )[0]
+        return {
+            "available": True,
+            "months": months,
+            "record_starts": first,
+            "record_ends": last,
+            "filed": filed,
+            "without_a_theme": without,
+            "model": model,
+            "filed_utc": latest,
+            "storylines": self._rows("select count(distinct storyline) from storyline_member")[0][0],
+            "themes": [
+                {
+                    "id": theme.id,
+                    "area": theme.area,
+                    "name": theme.name,
+                    "description": theme.description,
+                    "matters": totals.get(theme.id, 0),
+                    "storylines": storylines.get(theme.id, 0),
+                    "months": by_month.get(theme.id, {}),
+                }
+                for theme in self.themes.values()
+            ],
+        }
+
+    def _filed_matters(self, where: str, values: list[Any]) -> list[dict[str, Any]]:
+        """Matters with how they were filed and the days they were before a body, oldest first."""
+        rows = self._rows(
+            f"""select m.id, m.file_number, m.title, m.status, m.department, t.gist, t.themes, s.storyline, s.basis, d.days
+                from v_matter m left join matter_tag t on t.matter = m.id left join storyline_member s on s.matter = m.id
+                left join (select matter, list(day order by day) as days from matter_day group by 1) d on d.matter = m.id
+                where {where}
+                order by d.days[1] nulls last, m.file_number""",
+            values,
+        )
+        return [
+            {
+                "id": r[0], "file_number": r[1], "title": r[2], "status": r[3], "department": r[4], "gist": r[5],
+                "themes": r[6] or [], "storyline": r[7], "basis": r[8], "days": r[9] or [],
+            }
+            for r in rows
+        ]  # fmt: skip
+
+    def theme(self, params: dict[str, str]) -> dict[str, Any]:
+        """One theme: its storylines, and every matter filed under it or belonging to one of them."""
+        theme = self.themes.get(params.get("id") or "") if self.has_themes else None
+        if theme is None:
+            raise NotFound(f"There is no theme called {params.get('id')}. Pick one from the Explore page.")
+        matters = self._filed_matters(
+            """m.id in (select matter from matter_tag where list_contains(themes, ?)
+                        union select matter from storyline_member where list_contains(themes, ?))""",
+            [theme.id, theme.id],
+        )
+        names = dict(self._rows("select distinct storyline, name from storyline_member where list_contains(themes, ?)", [theme.id]))
+        storylines: dict[str, dict[str, Any]] = {}
+        for matter in matters:
+            # A storyline filed mostly elsewhere is not this theme's, though one of its items is.
+            if matter["storyline"] not in names:
+                matter["storyline"] = None
+                continue
+            story = storylines.setdefault(
+                matter["storyline"], {"id": matter["storyline"], "name": names[matter["storyline"]], "matters": 0, "first": None, "last": None}
+            )
+            story["matters"] += 1
+            if matter["days"]:
+                story["first"] = min(filter(None, [story["first"], matter["days"][0]]))
+                story["last"] = max(filter(None, [story["last"], matter["days"][-1]]))
+        return {
+            "id": theme.id,
+            "name": theme.name,
+            "area": theme.area,
+            "description": theme.description,
+            "record_ends": self._rows("select max(date) from v_meeting")[0][0],
+            "storylines": sorted(storylines.values(), key=lambda s: (-s["matters"], str(s["first"]))),
+            "matters": matters,
+        }
+
+    def storyline(self, params: dict[str, str]) -> dict[str, Any]:
+        """One storyline: its matters in date order, and what put each of them in it."""
+        chosen = params.get("id") or ""
+        found = self._rows("select name, themes from storyline_member where storyline = ? limit 1", [chosen]) if self.has_themes else []
+        if not found:
+            raise NotFound(f"There is no storyline {chosen}. Pick one from a theme on the Explore page.")
+        matters = self._filed_matters("s.storyline = ?", [chosen])
+        days = [day for matter in matters for day in matter["days"]]
+        return {
+            "id": chosen,
+            "name": found[0][0],
+            "themes": self._theme_names(found[0][1]),
+            "first": min(days, default=None),
+            "last": max(days, default=None),
+            "record_ends": self._rows("select max(date) from v_meeting")[0][0],
+            "matters": matters,
+        }
+
+    def meeting(self, params: dict[str, str]) -> dict[str, Any]:
+        """One meeting's items under their themes, and the meetings to choose from, latest first."""
+        filed = "count(distinct o.src) filter (where o.src in (select matter from matter_tag))" if self.has_themes else "0"
+        meetings = self._rows(
+            f"""select mt.id, mt.date, mt.body_name, mt.site_url, count(distinct o.src), {filed}
+                from v_meeting mt join e_on_agenda o on o.dst = mt.id group by all order by mt.date desc, mt.body_name limit {MEETING_CHOICES}"""
+        )
+        if not meetings:
+            return {"meetings": [], "meeting": None, "groups": []}
+        # Unless one is asked for, the latest meeting with something filed: a meeting of minutes alone says little.
+        chosen = params.get("id") or next((m[0] for m in meetings if m[5]), meetings[0][0])
+        facts = self._rows("select id, date, body_name, site_url from v_meeting where id = ?", [chosen])
+        if not facts:
+            raise NotFound(f"There is no meeting {chosen} in the record. Pick one from the list.")
+        tagged = "left join matter_tag t on t.matter = m.id left join storyline_member s on s.matter = m.id" if self.has_themes else ""
+        columns = "t.gist, t.themes, s.storyline, s.name" if self.has_themes else "null, null, null, null"
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for row in self._rows(
+            f"""select m.id, m.file_number, m.title, m.matter_type, o.action, o.result, {columns}
+                from e_on_agenda o join v_matter m on m.id = o.src {tagged}
+                where o.dst = ? order by o.agenda_number, m.file_number""",
+            [chosen],
+        ):
+            themes = [t for t in row[7] or [] if t in self.themes]
+            item = {
+                "id": row[0], "file_number": row[1], "title": row[2], "matter_type": row[3], "action": row[4], "result": row[5],
+                "gist": row[6], "also": self._theme_names(themes[1:]), "storyline": {"id": row[8], "name": row[9]} if row[8] else None,
+            }  # fmt: skip
+            groups.setdefault(themes[0] if themes else "", []).append(item)
+        order = {theme: n for n, theme in enumerate(self.themes)} | {"": len(self.themes)}
+        return {
+            "meetings": [{"id": r[0], "date": r[1], "body": r[2], "url": r[3], "items": r[4]} for r in meetings],
+            "meeting": {"id": facts[0][0], "date": facts[0][1], "body": facts[0][2], "url": facts[0][3]},
+            "groups": [
+                {"theme": theme or None, "name": self.themes[theme].name if theme else "Routine or not filed", "items": items}
+                for theme, items in sorted(groups.items(), key=lambda pair: order[pair[0]])
+            ],
+        }
+
     def topic(self, params: dict[str, str]) -> dict[str, Any]:
         """Matters about a topic, counted by the quarter they were introduced and by
         requesting department.
@@ -741,14 +953,15 @@ class App:
         if not question or not self.searcher.keywords:
             return {"query": question, "total": 0, "quarters": [], "departments": [], "matters": []}
         where, values = _filters(params).sql()
+        gist, tagged = ("t.gist", "left join matter_tag t on t.matter = m.id") if self.has_themes else ("null", "")
         rows = self._rows(
             f"""select m.id, m.file_number, m.title, m.status, coalesce(m.department, 'No department'),
-                       coalesce(m.intro_date, c.last_action) as day
+                       coalesce(m.intro_date, c.last_action) as day, {gist}
                 from (select matter, max(last_action_date) as last_action
                       from (select matter, last_action_date, fts_main_chunk.match_bm25(chunk_id, ?, conjunctive := 1) as score
                             from chunk where {where})
                       where score is not null group by 1) c
-                join v_matter m on m.id = c.matter
+                join v_matter m on m.id = c.matter {tagged}
                 order by day desc nulls last, m.file_number desc""",
             [question, *values],
         )
@@ -773,15 +986,15 @@ class App:
                 quarters[label] = {"quarter": label, "counts": dict.fromkeys(departments, 0), "total": 0}
                 year, quarter = (year, quarter + 1) if quarter < 4 else (year + 1, 1)
         matters = []
-        for matter, file_number, title, status, department, day in rows:
+        for matter, file_number, title, status, department, day, matter_gist in rows:
             label = f"{day.year} Q{(day.month - 1) // 3 + 1}" if day else None
             group = department if department in named or department == "No department" else "Other departments"
             if label in quarters:
                 quarters[label]["counts"][group] += 1
                 quarters[label]["total"] += 1
             matters.append(
-                {"id": matter, "file_number": file_number, "title": title, "status": status, "department": department,
-                 "date": day, "quarter": label}
+                {"id": matter, "file_number": file_number, "title": title, "gist": matter_gist, "status": status,
+                 "department": department, "date": day, "quarter": label}
             )
         return {
             "query": question,
@@ -806,6 +1019,10 @@ def _handler(app: App) -> type[BaseHTTPRequestHandler]:
         "/api/law_text": app.law_text,
         "/api/ordinances": lambda params: app.ordinances(),
         "/api/bills": app.bills,
+        "/api/explore": lambda params: app.explore(),
+        "/api/theme": app.theme,
+        "/api/storyline": app.storyline,
+        "/api/meeting": app.meeting,
     }
     page = resources.files("legistutor").joinpath("static", "index.html")
 
@@ -887,20 +1104,89 @@ def application(data_dir: Path, client: str) -> App:
 
         # In a Databricks App the volume is not on disk: read a local copy, and send new summaries back.
         data_dir, mirror = databricks.mirror_if_needed(Path(data_dir))
-    searcher = Searcher(data_dir, client, make_embedder(settings))
-    return App(
-        searcher,
+    embedder = make_embedder(settings)
+    app = App(
+        Searcher(data_dir, client, embedder),
         lambda: llm.chat_model(config.settings()),
         client=client,
         embed_model=settings.embed_model,
         notes_dir=notes_dir(data_dir, client),
         summary_written=mirror.push if mirror else None,
+        load=lambda: Searcher(data_dir, client, embedder),
+    )
+    app.mirror = mirror
+    return app
+
+
+def data_signature(data_dir: Path) -> frozenset[tuple[str, int, int]]:
+    """Every table the page reads, with its size and time of writing: differs after a refresh."""
+    data_dir = Path(data_dir)
+    return frozenset(
+        (path.relative_to(data_dir).as_posix(), path.stat().st_size, path.stat().st_mtime_ns)
+        for layer in ("silver", "gold")
+        for path in (data_dir / layer).rglob("*.parquet")
     )
 
 
-def serve(data_dir: Path, client: str, *, port: int = 8765, host: str = "127.0.0.1", open_browser: bool = True) -> None:
+class Watcher:
+    """Reloads the page's data when a refresh has rewritten it, so nobody has to restart the page.
+
+    A refresh writes its tables over some minutes. The data is read again only once two looks
+    in a row see the same files, so a refresh under way is waited out, not read halfway.
+    """
+
+    def __init__(self, app: App, pull: Callable[[], Any] | None = None) -> None:
+        self.app = app
+        self.pull = pull  # in a Databricks App: fetch what changed in the volume first
+        self.loaded = data_signature(app.searcher.data_dir)
+        self.seen = self.loaded
+
+    def look(self) -> bool:
+        """One look at the files. True if the data was reloaded."""
+        if self.pull:
+            self.pull()
+        now = data_signature(self.app.searcher.data_dir)
+        settled, self.seen = now == self.seen, now
+        if now == self.loaded or not settled:
+            return False
+        self.app.reload()
+        self.loaded = now
+        log.info("The data changed on disk; reloaded it (%s tables)", len(now))
+        return True
+
+    def run(self, seconds: float, stop: threading.Event) -> None:
+        while not stop.wait(seconds):
+            try:
+                self.look()
+            except Exception:  # noqa: BLE001 - the page keeps serving what it has, and looks again later
+                log.exception("Could not reload the data; still serving the copy loaded at %s", self.app.loaded_utc)
+
+
+def watch(app: App, seconds: float) -> Callable[[], None]:
+    """Start looking for new data every ``seconds``. Call the returned function to stop.
+
+    Stopping waits for the thread to end. A thread still running at exit keeps the app, and
+    with it DuckDB's objects, alive, and DuckDB's bindings (nanobind) then report them as leaked.
+    """
+    stop = threading.Event()
+    mirror = getattr(app, "mirror", None)
+    watcher = Watcher(app, mirror.pull if mirror else None)
+    thread = threading.Thread(target=watcher.run, args=(seconds, stop), name="legistutor-reload", daemon=True)
+    thread.start()
+
+    def end() -> None:
+        stop.set()
+        thread.join(timeout=30)  # a reload under way finishes first
+
+    return end
+
+
+def serve(
+    data_dir: Path, client: str, *, port: int = 8765, host: str = "127.0.0.1", open_browser: bool = True, reload_seconds: float = 120.0
+) -> None:
     app = application(data_dir, client)
     server = make_server(app, port, host)
+    stop_watching = watch(app, reload_seconds) if reload_seconds > 0 else None
     address = f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{server.server_address[1]}/"
     print(f"Serving {gold.chunks_path(app.searcher.data_dir, client)} at {address}  (Ctrl+C to stop)", flush=True)
     if open_browser:
@@ -910,4 +1196,7 @@ def serve(data_dir: Path, client: str, *, port: int = 8765, host: str = "127.0.0
     except KeyboardInterrupt:
         print("\nStopped.")
     finally:
+        if stop_watching:
+            stop_watching()
         server.server_close()
+        app.close()

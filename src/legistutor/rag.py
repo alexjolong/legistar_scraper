@@ -49,7 +49,12 @@ requires or allows, stay close to its wording and add that the County Attorney's
 means for the county; this record cannot settle that.
 
 Lead with the answer, in plain language, and keep it as short as the question allows. A list is fine when several \
-items answer the question."""
+items answer the question.
+
+Follow the county's writing style: short sentences and everyday words, at about an 8th-grade reading level; active \
+voice; sentence case, with no words in all capitals except acronyms; the month spelled out in dates (May 12, 2025, \
+not 5/12/25 or May 12th); numerals for counts and amounts ($5 million, 7%); "Hennepin County" or "the county", never \
+"Hennepin" alone; "the board" in lowercase unless it is the full name. Spell out an acronym the first time you use it."""
 
 LAW_SHARE = 0.25  # at most this much of the prompt goes to statute and ordinance text
 # Law text is added to a question that is about the law, not to every question: for

@@ -87,10 +87,10 @@ def test_matter_view_has_the_family_path_and_typed_neighbours(app):
         ("26-0001 R1", ["adopt"]),
     ]
     groups = {group["name"]: group for group in data["neighbours"]}
-    assert set(groups) == {"Requested by", "Heard by", "Later items", "Cites"}
+    assert set(groups) == {"Requested by", "Heard by", "Later matters", "Cites"}
     assert groups["Requested by"]["nodes"][0]["label"] == "Public Works - Roads"
     assert [node["label"] for node in groups["Heard by"]["nodes"]] == ["Board", "Public Works Committee"]
-    assert groups["Later items"]["nodes"][0]["label"] == "26-0001 R1"
+    assert groups["Later matters"]["nodes"][0]["label"] == "26-0001 R1"
     assert groups["Cites"]["nodes"][0] == {"id": "mnstat:383B.158", "type": "statute", "label": "Minn. Stat. § 383B.158", "detail": None}
     assert data["sections"]["resolution"].startswith("BE IT RESOLVED") and data["attachments"][0]["name"] == "Map"
     assert app.matter({"id": "test:matter:13"})["journey"][0]["awaiting"] == ["Public Works Committee"]
@@ -151,6 +151,7 @@ def test_topic_counts_matters_containing_every_word_by_quarter_and_department(ap
     assert data["total"] == 2 and data["departments"] == ["Public Works - Roads"]
     assert data["quarters"] == [{"quarter": "2026 Q1", "counts": {"Public Works - Roads": 2}, "total": 2}]
     assert [(m["file_number"], m["quarter"]) for m in data["matters"]] == [("26-0001 R1", "2026 Q1"), ("26-0001", "2026 Q1")]
+    assert [m["gist"] for m in data["matters"]] == [None, None]  # nothing filed under themes in this record
     assert app.topic({"q": "agreement shelter"})["total"] == 0  # both words, in one passage
     letter = app.topic({"q": "Edina transit"})
     assert letter["departments"] == ["No department"] and letter["quarters"][0]["counts"] == {"No department": 1}
@@ -186,3 +187,47 @@ def test_http_server_end_to_end(app):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_refreshed_data_is_loaded_once_it_has_settled(tmp_path):
+    _write_bronze(tmp_path)
+    embedder = FakeEmbedder()
+    gold.build(tmp_path, C, embedder)
+    application = web.App(
+        Searcher(tmp_path, C, embedder), FakeChat, client=C, embed_model=embedder.model,
+        load=lambda: Searcher(tmp_path, C, embedder),
+    )  # fmt: skip
+    pulls = []
+    watcher = web.Watcher(application, pull=lambda: pulls.append(1))
+    assert watcher.look() is False and len(pulls) == 1  # nothing changed
+
+    def shelter_passage():
+        return [p.text for hit in application.search({"q": "shelter beds winter"})["hits"] for p in hit.passages if "helter" in p.text]
+
+    assert any("this winter" in text for text in shelter_passage())
+    _write_bronze(tmp_path, shelter_background="Emergency shelter beds at the new Lake Street building.")
+    gold.build(tmp_path, C, embedder)
+    first = application.searcher
+    assert watcher.look() is False  # changed, but perhaps still being written
+    assert application.searcher is first
+    assert watcher.look() is True  # the same on a second look: read it
+    assert application.searcher is not first
+    assert any("Lake Street" in text for text in shelter_passage())
+    assert watcher.look() is False
+
+    application.load = lambda: (_ for _ in ()).throw(RuntimeError("index half written"))
+    _write_bronze(tmp_path, shelter_background="Third version.")
+    gold.build(tmp_path, C, embedder)
+    watcher.look()
+    with pytest.raises(RuntimeError):
+        watcher.look()
+    assert any("Lake Street" in text for text in shelter_passage())  # the copy it had is still served
+
+
+def test_stopping_the_watcher_ends_its_thread(app):
+    # A thread left running at exit keeps DuckDB's objects alive, and DuckDB then reports them as leaked.
+    stop = web.watch(app, seconds=60)
+    assert any(t.name == "legistutor-reload" for t in threading.enumerate())
+    stop()
+    assert not any(t.name == "legistutor-reload" for t in threading.enumerate())
+    app.close()

@@ -24,7 +24,8 @@ county ordinance pages'    (pages and archives as fetched)        |-- DuckDB    
                                                                   |-- GraphFrames  batch graph analytics
                                                                   '--index--> gold (passages + embeddings)
                                                                                 '-- search / ask / serve (web page)
-refresh = ingest + ingest-law + build + index
+                                                                  '--themes-> gold (gist, themes, storylines)
+refresh = ingest + ingest-law + build + index + themes
 ```
 
 ## Quick start
@@ -42,6 +43,7 @@ uv run legistutor index               # silver -> gold search index; needs Ollam
 uv run legistutor search "embedded social workers in police departments"
 uv run legistutor ask "Where does 26-0333 stand, and what was it about?"
 uv run legistutor ingest-law          # statutes, session laws, bills, ordinances; then build and index again
+uv run legistutor themes              # the chat model files each matter under themes and storylines
 uv run legistutor serve               # the web page, at http://127.0.0.1:8765/
 uv run legistutor refresh             # later: fetch what changed, rebuild graph and index
 uv run pytest
@@ -454,6 +456,21 @@ uv run legistutor serve            # opens http://127.0.0.1:8765/
 One page, served from this machine to this machine only (it binds to 127.0.0.1), with
 no external scripts or fonts.
 
+- **Explore**, the page's first tab once `legistutor themes` has run (see
+  [Themes and storylines](#themes-and-storylines)):
+  - *What the board has been working on*: one row per theme, one column per month,
+    shaded by how many of the theme's items were before a body that month. Select a
+    theme to open it, or a cell to open it at that month.
+  - *A theme*: its storylines as rows on a timeline over the whole record (a dot per
+    item, a line from the first to the last, so a discussion that kept coming back is a
+    long line with many dots), then its items with their gists, which can be narrowed
+    to those in a storyline, those that came up on their own, or one month.
+  - *A storyline* (opens beside the page): its items in date order, and for each one
+    why it was put there.
+  - *By meeting*: any meeting's agenda sorted by theme, with a link to the meeting in
+    Legistar. This is the way in for someone who starts from the calendar.
+  - A matter's own view shows its gist, its themes and its storyline.
+  - `?theme=affordable-housing` and `?storyline=...` in the address open one directly.
 - **Ask and search.** A question box with the same filters as the CLI. *Ask* streams
   an answer with numbered citations that jump to their source; *Search only* returns
   the ranked matters at once without waiting for the model. Identifiers in an
@@ -546,9 +563,10 @@ uv run legistutor refresh
 ```
 
 runs `ingest` for every stage (only what changed upstream is fetched), `ingest-law`,
-then `build` and `index` (only new or edited passages are embedded). It needs Ollama
-running for the embedding step, and exits non-zero if any fetch failed. `--no-law`
-leaves the law sources alone.
+then `build` and `index` (only new or edited passages are embedded), then `themes`
+(only new or edited matters are read). It needs Ollama running with the embedding model
+and the chat model, and exits non-zero if any fetch failed. `--no-law` leaves the law
+sources alone; `--no-themes` skips the filing, and with it the need for the chat model.
 
 What `ingest-law` re-reads on a routine run: a statute chapter once it is a month old
 (the statutes are republished yearly, with corrections in between); the current
@@ -561,13 +579,100 @@ twenty requests. To run it every morning on Windows:
 schtasks /Create /TN "legistutor refresh" /SC DAILY /ST 06:00 /TR "cmd /c cd /d C:\path\to\legistutor && uv run legistutor refresh >> data\logs\refresh.log 2>&1"
 ```
 
-Restart `legistutor serve` after a refresh; it loads the index when it starts. If the
-port is already being served, `serve` says so and stops; use `--port` for a second copy.
+A running `legistutor serve` picks up a refresh by itself: every two minutes it looks
+at the silver and gold files, and once they have changed and then stayed the same for
+two looks (so a refresh still under way is waited out) it loads them, answering from
+the old copy until the new one is ready. `--reload-seconds` or
+`LEGISTUTOR_RELOAD_SECONDS` changes the interval; `0` turns it off. If the port is
+already being served, `serve` says so and stops; use `--port` for a second copy.
+
+## Themes and storylines
+
+```
+uv run legistutor themes              # file what is new or changed; the first run reads everything
+uv run legistutor themes --limit 200  # a first run in pieces
+```
+
+The record has no subject field, so the chat model reads each matter once
+([themes.py](src/legistutor/themes.py)) and returns three things:
+
+- a **gist**: what the item does, as a headline of at most 20 words ("Accept $1.5 million
+  from the state to house families with school-age children"). Titles are clerk's
+  shorthand; matters are short (the median is about 2,300 characters), so a longer
+  summary would add little.
+- one to three **themes** from the fixed list in
+  [themes.csv](src/legistutor/themes.csv): 26 subjects in nine areas. A fixed list
+  keeps the themes the same from one refresh to the next. Left to name themes freely,
+  the local model produced 160 for 200 matters.
+- a **storyline** name, when the item is one step in a named project, program, facility
+  or contract ("Blue Line Extension").
+
+Storylines are then joined without a model. Matters are in one storyline when the model
+gave them the same name (compared without years, phases, acronyms in brackets, plurals,
+"METRO", "Inc." and filler words), when their titles carry the same agreement number
+(`A2311867`, `PR00006316`), or when the record links them (a revision, a relation, a
+mention of the other's file number). Each member records which of those put it there.
+A mention can bring an item into a storyline but never merges two storylines the model
+named differently. Without that rule, chains of mentions made a 37-item "storyline" out
+of brownfield grants, HUD action plans and board appointments. A name that is one of the
+county's own boards ("Housing and Redevelopment Authority") joins nothing, since it
+would sweep up everything that board does. A storyline needs two items; an item and its
+own revisions count as one. A storyline is shown under every theme that at least 30% of
+its filed items carry.
+
+Rebuilding storylines needs no model: `uv run legistutor themes` reads nothing again when
+nothing changed, and joins the storylines afresh.
+
+Minutes, claims registers and "Hennepin Highlights" are not read; they can still be in a
+storyline through a link in the record.
+
+The result is two tables beside the search index, `matter_tags.parquet` (one row per
+matter) and `storylines.parquet` (one row per matter in a storyline). A matter is read
+again only when its text, the theme list, the instructions or the model changes, so
+**editing `themes.csv` files everything again** on the next run. Locally that is about
+an hour and a half for the whole record with `gemma4:12b` (2,207 matters); on Databricks it is one
+request per matter to the chat endpoint, four at a time (`--workers`, or
+`LEGISTUTOR_TAG_WORKERS`). The run saves every 100 matters and can be stopped and
+started again. `refresh` files new matters as its last step; `--no-themes` skips it.
+
+The filing is a model's reading, and the page says so wherever it shows one. Expect a
+small local model to over-apply broad themes; the storyline joins by name are the least
+certain, which is why each says how it was made.
+
+## Measuring it
+
+```
+uv run legistutor eval                 # search only: seconds
+uv run legistutor eval --answers       # also writes and checks an answer per question
+uv run legistutor eval --compare eval/results/<earlier run>.json
+```
+
+runs the questions in [eval/questions.csv](eval/questions.csv) (how to write them:
+[docs/evaluation-set.md](docs/evaluation-set.md)) through the same search and
+answering as the page ([evaluate.py](src/legistutor/evaluate.py)). For each kind of
+question it reports:
+
+- **found**: every `must_find` item was among the results shown, and **MRR**, how high
+  the first of them ranked (1.00 is always first);
+- **lead ok**: a question about the law led with the law's results, one about the
+  record with the record's;
+- with `--answers`: **facts**, how many `answer_facts` the answers state; **wrong**,
+  answers that say what `must_not_say` describes; **unsupp.**, answers containing an
+  identifier that is not in their sources; and how many `no-answer` questions were
+  declined.
+
+Facts are read by a model (`--judge` names another one; by default the one that wrote
+the answer), so those columns are a measurement with error. The file is checked first:
+a row that cannot be scored is named and nothing runs, and a `must_find` entry that is
+not in the data at all is warned about. Each run is saved under `eval/results/` with
+the models it used, and `--compare` lists the questions whose result changed since an
+earlier run. To compare embedding models, index with each (`LEGISTUTOR_EMBED_MODEL`,
+then `legistutor index --full`) and run `eval` after each.
 
 ## Running on Databricks
 
-The same code runs in a Databricks workspace with three substitutions. None of this
-has been run in a workspace yet; `check` (step 3) is there to find what differs.
+The same code runs in a Databricks workspace with three substitutions. `check` (step 3)
+is there to find what differs in yours.
 
 | Locally | On Databricks |
 |---|---|
@@ -607,8 +712,11 @@ Setting up:
    machine is not carried over: vectors from Ollama's build of the model are not
    mixed with the endpoint's.
 5. Schedule the notebook as a job (Schedule, in the notebook) with `command` =
-   `refresh`. For state bills, put the Open States key in a secret scope as
-   `PLURAL_POLICY_API_KEY` and name the scope in `secret_scope`.
+   `refresh`. For state bills, keep the Open States key as a Unity Catalog secret and
+   give its three-part name (`catalog.schema.key`) in `plural_policy_api_key_path`.
+   The first `refresh` after themes were added sends every matter to the chat endpoint
+   once (about 2,400 requests of roughly 1,500 tokens each); `command` = `themes` does
+   only that step, and `refresh --no-themes` leaves it out.
 6. Create the app (New > App > Custom), pointing it at the Git folder. Edit
    [app.yaml](app.yaml) first so `LEGISTUTOR_DATA_DIR` and the endpoint names match
    the job's. Under the app's resources add the two serving endpoints (Can query)
@@ -621,7 +729,8 @@ How the app differs from the local page:
   app downloads the `silver` and `gold` directories (about 180 MB today) to its own
   disk through the Files API ([databricks.py](src/legistutor/databricks.py)) and
   reads those.
-- It loads that copy once. After the job refreshes the data, restart the app to see it.
+- Every two minutes it lists the volume, downloads what the job has rewritten, and
+  loads it once the files have stopped changing. No restart is needed after a refresh.
 - Summaries of statutes written in the app are uploaded back to the volume, so each is
   written once. Summaries written by the local model are written again by the endpoint's.
 - It listens on `0.0.0.0` at `DATABRICKS_APP_PORT`; Databricks signs people in before
