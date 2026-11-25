@@ -1543,7 +1543,7 @@ function renderStoryline(s) {
     el("div", { class: "card" },
       el("h2", {}, s.name),
       el("div", { class: "meta" }, `Storyline of ${plural(s.matters.length, "matter")}` + (s.first ? `, ${fmtDate(s.first)} to ${fmtDate(s.last)}; ${quiet(s.last, s.record_ends)}` : "")),
-      el("div", { class: "chips", style: "margin-top:8px;gap:6px" }, s.themes.map((t) => themePill(t))),
+      el("div", { class: "chips", style: "margin-top:8px;gap:6px" }, s.themes.map((t) => themePill(t)))),
     el("div", { class: "card" },
       table(`Matters in the storyline ${s.name}`, ["First heard", "Matter", "What it does", "Status", "Why it is here"],
         s.matters.map((m) => el("tr", {},

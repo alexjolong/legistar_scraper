@@ -66,6 +66,20 @@ def test_colors_meet_wcag_aa(scheme, fg, bg, minimum):
     assert ratio >= minimum, f"{scheme}: {fg} {colors[fg]} on {bg} {colors[bg]} is {ratio:.2f}:1, needs {minimum}:1"
 
 
+def test_page_script_parses():
+    # One stray bracket stops the whole script: no button works and the page never leaves its first section.
+    quickjs = pytest.importorskip("quickjs")
+    start = PAGE.index("<script>") + len("<script>")
+    script = PAGE[start: PAGE.index("</script>", start)]
+    before = PAGE[:start].count("\n")  # the script's line n is the page's line n + before
+    try:
+        quickjs.Context().eval("(function () {" + script + "\n})")  # compiled, never run
+    except quickjs.JSException as error:
+        found = re.search(r"<input>:(\d+)", str(error))
+        where = f"near line {int(found[1]) + before} of index.html" if found else "in index.html"
+        pytest.fail(f"The page's script does not parse, {where}: {str(error).splitlines()[0]}")
+
+
 def test_page_structure_follows_the_design_system():
     assert '<html lang="en">' in PAGE
     assert PAGE.count("<h1") == 1, "one H1 per page"
